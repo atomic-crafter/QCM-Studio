@@ -1,0 +1,128 @@
+name: Deploy GIF + Gemini Worker
+
+on:
+  push:
+    branches: ["master", "main"]
+    paths:
+      - "proxy/**"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFARE_API_TOKEN: ${{ secrets.CLOUDFARE_API_TOKEN }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFARE_API_KEY: ${{ secrets.CLOUDFARE_API_KEY }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          CLOUDFARE_EMAIL: ${{ secrets.CLOUDFARE_EMAIL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFARE_ACCOUNT_ID: ${{ secrets.CLOUDFARE_ACCOUNT_ID }}
+          GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_CHAT_KEY: ${{ secrets.GEMINI_CHAT_KEY }}
+          SHARED_KEY_VAULT_PRIVATE_KEY: ${{ secrets.SHARED_KEY_VAULT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-${CLOUDFARE_ACCOUNT_ID:-}}"
+          API_TOKEN="${CLOUDFLARE_API_TOKEN:-${CLOUDFARE_API_TOKEN:-}}"
+          API_KEY="${CLOUDFLARE_API_KEY:-${CLOUDFARE_API_KEY:-}}"
+          EMAIL="${CLOUDFLARE_EMAIL:-${CLOUDFARE_EMAIL:-}}"
+
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_API_TOKEN=$API_TOKEN" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_EMAIL=$EMAIL" >> "$GITHUB_ENV"
+
+          [[ -n "${ACCOUNT_ID:-}" ]] || { echo "Missing secret: CLOUDFLARE_ACCOUNT_ID (or CLOUDFARE_ACCOUNT_ID)"; exit 1; }
+          [[ -n "${GIPHY_API_KEY:-}" ]] || { echo "Missing secret: GIPHY_API_KEY"; exit 1; }
+          [[ -n "${GEMINI_API_KEY:-}" ]] || { echo "Missing secret: GEMINI_API_KEY"; exit 1; }
+          [[ -n "${GEMINI_CHAT_KEY:-}" ]] || { echo "Missing secret: GEMINI_CHAT_KEY"; exit 1; }
+          [[ -n "${SHARED_KEY_VAULT_PRIVATE_KEY:-}" ]] || { echo "Missing secret: SHARED_KEY_VAULT_PRIVATE_KEY"; exit 1; }
+
+          [[ -n "${API_TOKEN:-}" ]] || { echo "Missing secret: CLOUDFLARE_API_TOKEN (or CLOUDFARE_API_TOKEN)"; exit 1; }
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@4
+
+      - name: Wrangler version
+        run: wrangler --version
+
+      - name: Wrangler auth check
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler whoami || true
+
+      - name: Deploy Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler deploy --config wrangler.toml
+
+      - name: Sync Worker secrets
+        shell: bash
+        env:
+          GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_CHAT_KEY: ${{ secrets.GEMINI_CHAT_KEY }}
+          SHARED_KEY_VAULT_PRIVATE_KEY: ${{ secrets.SHARED_KEY_VAULT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${GIPHY_API_KEY:-}" ]] || { echo "Missing secret: GIPHY_API_KEY"; exit 1; }
+          [[ -n "${GEMINI_API_KEY:-}" ]] || { echo "Missing secret: GEMINI_API_KEY"; exit 1; }
+          [[ -n "${GEMINI_CHAT_KEY:-}" ]] || { echo "Missing secret: GEMINI_CHAT_KEY"; exit 1; }
+          [[ -n "${SHARED_KEY_VAULT_PRIVATE_KEY:-}" ]] || { echo "Missing secret: SHARED_KEY_VAULT_PRIVATE_KEY"; exit 1; }
+
+          printf '%s' "$GIPHY_API_KEY"   | wrangler versions secret put GIPHY_API_KEY --config wrangler.toml
+          printf '%s' "$GEMINI_API_KEY"  | wrangler versions secret put GEMINI_API_KEY --config wrangler.toml
+          printf '%s' "$GEMINI_CHAT_KEY" | wrangler versions secret put GEMINI_CHAT_KEY --config wrangler.toml
+
+          # Capture the last call's output: each "versions secret put" prints
+          # "Created version <uuid> with secret ..." — this final version
+          # (built cumulatively on top of the previous 3) carries all 4
+          # secrets, and its ID is what we deploy to 100% in the next step.
+          LAST_OUTPUT=$(printf '%s' "$SHARED_KEY_VAULT_PRIVATE_KEY" | wrangler versions secret put SHARED_KEY_VAULT_PRIVATE_KEY --config wrangler.toml 2>&1 | tee /dev/stderr)
+          VERSION_ID=$(echo "$LAST_OUTPUT" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          [[ -n "$VERSION_ID" ]] || { echo "Could not parse the new Worker version ID from wrangler output above"; exit 1; }
+          echo "SECRET_VERSION_ID=$VERSION_ID" >> "$GITHUB_ENV"
+
+      # `wrangler secret put` refuses to run when the account has any version
+      # that isn't currently deployed at 100% (Cloudflare's Gradual
+      # Deployments guard) — `wrangler versions secret put` sidesteps that by
+      # only creating a new version with the secret attached, without
+      # deploying it. `wrangler versions deploy` with no explicit version
+      # opens an interactive multi-select with nothing pre-selected in CI
+      # (no TTY), so we pass the exact version ID captured above instead.
+      - name: Deploy latest secret version to 100%
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler versions deploy "${SECRET_VERSION_ID}@100" --yes --config wrangler.toml
+
+      - name: Troubleshooting hint
+        if: failure()
+        run: |
+          echo "Common causes:"
+          echo "1) Wrong account ID"
+          echo "2) Token missing Workers Scripts:Edit"
+          echo "3) Token secret name typo (CLOUDFARE vs CLOUDFLARE)"
+          echo "4) 'latest version isn't deployed' error on secrets: check the Cloudflare dashboard's Deployments tab for a stray undeployed version and deploy or delete it"

@@ -1,0 +1,8 @@
+name = "your-worker-name"
+main = "proxy/cloudflare-giphy-worker.js"
+compatibility_date = "2026-03-14"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "YOUR_PROJECT_ID"
+ADMIN_USERNAME = "YourAdminUsername"

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QCM Dev — Entraînement</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2310101c'/%3E%3Ctext x='32' y='40' font-size='30' text-anchor='middle' fill='%237c3aed'%3EQ%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <link rel="stylesheet" href="css/style.css" id="app-main-styles" data-style-index="0">
+  <script>
+    (function ensureMainStylesheet() {
+      const link = document.getElementById("app-main-styles");
+      if (!link) return;
+
+      const candidates = [
+        "css/style.css",
+        "./css/style.css",
+        "../css/style.css",
+        "/css/style.css"
+      ];
+
+      function tryNextCandidate() {
+        const currentIndex = Number.parseInt(link.dataset.styleIndex || "0", 10);
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= candidates.length) return;
+        link.dataset.styleIndex = String(nextIndex);
+        link.href = candidates[nextIndex];
+      }
+
+      link.addEventListener("error", function onCssError() {
+        tryNextCandidate();
+      });
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ════════ LOGIN ════════ -->
+  <div id="login-screen" class="screen active">
+    <div class="logo"><span class="bracket">{</span> <span class="sym">QCM</span> <span class="bracket">}</span></div>
+    <div class="tagline">// Entraînement — Développement Web</div>
+    <div class="login-card">
+      <!-- Tabs -->
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active" onclick="window.showAuthTab && window.showAuthTab('login')">Connexion</button>
+        <button id="tab-register" class="auth-tab" onclick="window.showAuthTab && window.showAuthTab('register')">Créer un compte</button>
+      </div>
+
+      <!-- Login pane -->
+      <div id="auth-login-pane">
+        <div class="field">
+          <label>Nom d'utilisateur</label>
+          <input id="username-input" type="text" placeholder="ex: antonin42" maxlength="20" autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Mot de passe</label>
+          <input id="login-password-input" type="password" placeholder="••••••" autocomplete="current-password">
+        </div>
+        <span class="error-msg" id="login-error"></span>
+        <button class="btn" id="login-btn" onclick="window.login && window.login()">Connexion →</button>
+        <button class="btn secondary" id="guest-btn" onclick="window.enterGuestMode && window.enterGuestMode()">Continuer en invité</button>
+        <div class="guest-login-note">Mode invité: pseudo aléatoire, pas de statut en ligne/défis, pas de création/modification de QCM. Tu peux quand même créer/rejoindre une salle. Crée un compte pour débloquer toutes les fonctionnalités.</div>
+        <div class="auth-switch">Pas de compte ? <a href="#" onclick="event.preventDefault();window.showAuthTab && window.showAuthTab('register')">S'inscrire</a></div>
+      </div>
+
+      <!-- Register pane -->
+      <div id="auth-register-pane" style="display:none">
+        <div class="field">
+          <label>Nom d'utilisateur</label>
+          <input id="reg-username-input" type="text" placeholder="ex: antonin42" maxlength="20" autocomplete="username">
+          <span style="font-size:.75rem;color:var(--text-dim);margin-top:.2rem">2-20 caractères, lettres/chiffres/_ -</span>
+        </div>
+        <div class="field">
+          <label>Mot de passe</label>
+          <input id="reg-password-input" type="password" placeholder="••••••" autocomplete="new-password">
+          <span style="font-size:.75rem;color:var(--text-dim);margin-top:.2rem">6 caractères minimum</span>
+        </div>
+        <div class="field">
+          <label>Confirmer le mot de passe</label>
+          <input id="reg-confirm-input" type="password" placeholder="••••••" autocomplete="new-password">
+        </div>
+        <span class="error-msg" id="register-error"></span>
+        <button class="btn" id="register-btn" onclick="window.register && window.register()">Créer le compte →</button>
+        <div class="auth-switch">Déjà un compte ? <a href="#" onclick="event.preventDefault();window.showAuthTab && window.showAuthTab('login')">Se connecter</a></div>
+      </div>
+    </div>
+    <div class="login-credit">Fait par Antonin</div>
+  </div>
+
+  <!-- ════════ HOME ════════ -->
+  <div id="home-screen" class="screen">
+    <div class="topbar">
+      <div class="logo-small"><span class="bracket">{</span><span class="sym">QCM</span><span class="bracket">}</span></div>
+      <div class="topbar-right">
+          <div class="user-chip">
+            <div class="avatar" id="home-avatar"></div>
+            <span id="home-pseudo"></span>
+          </div>
+          <button id="btn-create-qcm-ai" class="btn sm" onclick="window.__openQcmCreator && window.__openQcmCreator()">✨ Créer un QCM</button>
+          <button id="btn-create-qcm-pdf" class="btn sm" onclick="window.__openPdfQcm && window.__openPdfQcm()">📄 PDF → QCM</button>
+          <button id="btn-create-qcm-scratch" class="btn sm" onclick="window.__openQcmScratch && window.__openQcmScratch()">🧩 From scratch</button>
+          <button id="btn-leaderboard" class="btn secondary sm" onclick="showScreen('lb-screen')">🏆 Scores</button>
+          <button id="btn-ai-access" class="btn secondary sm" style="display:none" onclick="window.__openAiAccessPanel && window.__openAiAccessPanel()">🔐 Accès IA</button>
+          <button id="btn-my-api-keys" class="btn secondary sm" style="display:none" onclick="window.__openApiKeysPanel && window.__openApiKeysPanel()">🔑 Mes clés IA</button>
+          <button class="btn secondary sm" onclick="logout()">Quitter</button>
+        </div>
+    </div>
+
+    <div class="home-hero">
+      <h1>Choisissez un thème</h1>
+      <p id="home-subtitle">// Chargement des modules...</p>
+      <div id="guest-warning" class="guest-warning" style="display:none"></div>
+    </div>
+
+    <div id="exam-calendar-shell" class="exam-calendar-shell"></div>
+
+    <!-- Les cartes de sujets sont générées dynamiquement par js/ui/home.js -->
+    <div id="online-panel"><div class="online-header">🟢 En ligne</div><div class="online-empty">Chargement...</div></div>
+
+    <!-- Salles de jeu multijoueur -->
+    <div id="rooms-panel">
+      <div class="rooms-panel-header">
+        <div class="rooms-panel-title"><span class="rooms-dot"></span> Salles de jeu</div>
+        <div class="rooms-panel-actions">
+          <button class="btn-room-action" onclick="window.__openJoinRoom()">🔑 Rejoindre</button>
+          <button class="btn-room-action primary" onclick="window.__openCreateRoom()">＋ Créer une salle</button>
+        </div>
+      </div>
+      <div id="rooms-list"><div class="rooms-empty">// Aucune salle publique en ce moment</div></div>
+    </div>
+
+    <!-- Les cartes de sujets sont générées dynamiquement par js/ui/home.js -->
+    <div class="subjects-grid" id="subjects-grid"></div>
+
+    <!-- QCM personnalisés (communauté + perso) -->
+    <div id="custom-qcms-section" class="custom-qcms-section"></div>
+  </div>
+
+  <!-- ════════ LEADERBOARD ════════ -->
+  <div id="lb-screen" class="screen">
+    <div class="lb-header">
+      <h2>🏆 Leaderboard Global</h2>
+      <button class="btn secondary sm" onclick="showScreen('home-screen')">← Retour</button>
+    </div>
+    <div class="lb-filters" id="lb-filters"></div>
+    <div class="lb-table" id="lb-table">
+      <div class="empty-lb">// Chargement...</div>
+    </div>
+  </div>
+
+  <!-- ════════ QUIZ ════════ -->
+  <div id="quiz-screen" class="screen">
+    <div class="quiz-main" id="quiz-main">
+      <div class="quiz-left">
+        <div class="quiz-topbar">
+          <button class="btn secondary sm" onclick="confirmQuit()">✕ Quitter</button>
+          <div class="quiz-meta">
+            <span id="quiz-subject-label"></span> · Question <span id="q-num">1</span>/<span id="q-total">15</span>
+          </div>
+          <div class="timer" id="timer"></div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+        </div>
+        <div class="question-card">
+          <div class="q-category" id="q-category"></div>
+          <div class="q-text" id="q-text"></div>
+          <div class="options" id="options"></div>
+          <div class="explanation" id="explanation"></div>
+        </div>
+        <div class="quiz-actions">
+          <div class="streak-badge" id="streak-badge"></div>
+          <button class="btn-next" id="btn-next" onclick="nextQuestion()">Suivant →</button>
+        </div>
+      </div>
+
+      <aside class="quiz-chat" id="quiz-chat">
+        <div class="quiz-chat-header">
+          <span>💬 Chat</span>
+          <div class="quiz-chat-header-right">
+            <span id="quiz-chat-room-label"></span>
+            <span id="quiz-chat-unread" class="chat-unread" style="display:none">0</span>
+          </div>
+        </div>
+        <div class="quiz-chat-messages" id="quiz-chat-messages"></div>
+        <form class="quiz-chat-form" id="quiz-chat-form">
+          <input id="quiz-chat-input" type="text" maxlength="220" placeholder="Écrire un message..." autocomplete="off">
+          <button type="button" class="btn-chat-gif" id="quiz-chat-gif-toggle">GIF</button>
+          <button type="submit" class="btn-chat-send">Envoyer</button>
+        </form>
+        <div class="quiz-chat-gif-picker" id="quiz-chat-gif-picker" style="display:none">
+          <input id="quiz-chat-gif-search" type="text" maxlength="60" placeholder="Rechercher un GIF...">
+          <div class="quiz-chat-gif-results" id="quiz-chat-gif-results"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ════════ RESULTS ════════ -->
+  <div id="result-screen" class="screen">
+    <div class="result-card">
+      <div class="score-circle">
+        <div class="score-num" id="res-pct"></div>
+        <div class="score-label">SCORE</div>
+      </div>
+      <h2 id="res-title"></h2>
+      <p id="res-msg"></p>
+      <div class="result-stats">
+        <div class="stat-box"><div class="val" id="res-correct"></div><div class="lbl">Correctes</div></div>
+        <div class="stat-box"><div class="val" id="res-wrong"></div><div class="lbl">Erreurs</div></div>
+        <div class="stat-box"><div class="val" id="res-streak"></div><div class="lbl">Max Série</div></div>
+      </div>
+      <div class="result-review">
+        <h3>Récapitulatif des réponses</h3>
+        <div id="res-review-list" class="result-review-list"></div>
+      </div>
+      <div class="result-btns">
+        <button class="btn" style="width:auto;padding:.8rem 1.8rem" onclick="showScreen('home-screen')">← Menu</button>
+        <button class="btn secondary" style="width:auto;padding:.8rem 1.8rem" onclick="showScreen('lb-screen')">🏆 Scores</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cursor-glow"></div>
+  <div id="toast"></div>
+
+  <!-- ════════ CREATE ROOM MODAL ════════ -->
+  <div id="create-room-modal" class="picker-overlay" style="display:none">
+    <div class="picker-modal">
+      <div class="picker-modal-header">
+        <h3>🎮 Créer une salle</h3>
+        <button class="picker-close" onclick="document.getElementById('create-room-modal').style.display='none'">✕</button>
+      </div>
+      <div class="create-room-form">
+        <div class="field">
+          <label>Nom de la salle</label>
+          <input id="room-name-input" type="text" placeholder="ex: Salle de révisions" maxlength="40" autocomplete="off">
+        </div>
+        <div class="room-type-toggle">
+          <button class="room-type-btn active" id="btn-public" onclick="window.__setRoomType(true)">🌐 Publique</button>
+          <button class="room-type-btn" id="btn-private" onclick="window.__setRoomType(false)">🔒 Privée</button>
+        </div>
+        <div class="field" id="room-password-field" style="display:none">
+          <label>Mot de passe</label>
+          <input id="room-password-input" type="text" placeholder="mot de passe" maxlength="30" autocomplete="off">
+        </div>
+        <div class="field" id="room-timer-field">
+          <label>Temps par question</label>
+          <div class="room-timer-row">
+            <input
+              id="room-timer-input"
+              type="range"
+              min="10"
+              max="120"
+              step="5"
+              value="60"
+              oninput="window.__setRoomTimer && window.__setRoomTimer(this.value)">
+            <span id="room-timer-value">60s</span>
+          </div>
+        </div>
+        <button class="btn" style="margin-top:.5rem" onclick="window.__confirmCreateRoom()">Créer la salle →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ JOIN ROOM MODAL ════════ -->
+  <div id="join-room-modal" class="picker-overlay" style="display:none">
+    <div class="picker-modal" style="width:min(380px,92vw)">
+      <div class="picker-modal-header">
+        <h3>🔑 Rejoindre une salle</h3>
+        <button class="picker-close" onclick="document.getElementById('join-room-modal').style.display='none'">✕</button>
+      </div>
+      <div class="create-room-form">
+        <div class="field">
+          <label>Code de la salle</label>
+          <input id="join-code-input" type="text" placeholder="ABC123" maxlength="6" autocomplete="off"
+            style="text-transform:uppercase;letter-spacing:4px;font-size:1.2rem;text-align:center">
+        </div>
+        <div class="field" id="join-password-field">
+          <label>Mot de passe (si salle privée)</label>
+          <input id="join-password-input" type="text" placeholder="laisser vide pour salle publique" maxlength="30" autocomplete="off">
+        </div>
+        <button class="btn" style="margin-top:.5rem" onclick="window.__confirmJoinRoom()">Rejoindre →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ ROOM LOBBY ════════ -->
+  <div id="room-lobby-screen" class="screen">
+    <div class="lobby-wrap">
+      <div class="lobby-card">
+        <div class="lobby-header">
+          <div>
+            <h2 id="lobby-title">Salle</h2>
+            <div class="lobby-meta">
+              <span class="lobby-code-badge">CODE : <strong id="lobby-code"></strong></span>
+              <span id="lobby-type" class="lobby-type-tag"></span>
+            </div>
+          </div>
+          <button class="btn secondary sm" onclick="window.__leaveRoomLobby()">← Quitter</button>
+        </div>
+
+        <div class="lobby-section-title">👥 Joueurs connectés</div>
+        <div id="lobby-players-list" class="lobby-players-list"></div>
+
+        <div class="lobby-section-title" style="margin-top:1.5rem">🎯 Thème sélectionné</div>
+        <div id="lobby-subject-display" class="lobby-subject-display">// Aucun thème sélectionné</div>
+
+        <div id="lobby-host-controls" style="display:none;flex-direction:column;gap:.8rem;margin-top:1.5rem">
+          <button class="btn secondary" onclick="window.__openRoomSubjectPicker()">🎯 Choisir le thème</button>
+          <button class="btn" id="lobby-start-btn" onclick="window.__startRoomGame()" disabled>🚀 Lancer la partie</button>
+        </div>
+
+        <div id="lobby-guest-waiting" style="display:none;align-items:center;gap:.6rem;margin-top:1.5rem;color:var(--text-dim);font-family:'Space Mono',monospace;font-size:.82rem">
+          <div class="online-dot"></div>
+          En attente du lancement par l'hôte...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ ROOM RESULTS ════════ -->
+  <div id="room-result-screen" class="screen">
+    <div class="room-result-wrap">
+      <h2 id="room-res-title">🏆 Résultats</h2>
+      <div id="room-res-subject" class="room-res-subject"></div>
+      <div id="room-res-list" class="room-res-list"></div>
+      <div class="result-btns" style="margin-top:2rem">
+        <button class="btn" style="width:auto;padding:.8rem 1.8rem" onclick="showScreen('home-screen')">← Menu</button>
+        <button class="btn secondary" style="width:auto;padding:.8rem 1.8rem" onclick="showScreen('lb-screen')">🏆 Scores</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase (CDN, pas besoin de npm) -->
+  <script type="module">
+    const APP_BUILD = "f7b6272"; // commit hash for cache busting
+    const LAST_BUILD_KEY = "qcm_app_build";
+    const lastBuild = localStorage.getItem(LAST_BUILD_KEY);
+
+    if (lastBuild !== APP_BUILD) {
+      localStorage.setItem(LAST_BUILD_KEY, APP_BUILD);
+      document.cookie = "qcm_auth_mode=; Max-Age=0; path=/";
+      document.cookie = "qcm_auth_user=; Max-Age=0; path=/";
+    }
+
+    console.info("[QCM] Build loaded:", APP_BUILD);
+
+    try {
+      await startApp();
+    } catch (error) {
+      console.error("[QCM] Bootstrap failed:", error);
+      const errorMessage = String(error?.message || error || "inconnue");
+      const message = `Erreur de chargement de l'app: ${errorMessage}`;
+      const loginErr = document.getElementById("login-error");
+      const registerErr = document.getElementById("register-error");
+      if (loginErr) {
+        loginErr.textContent = message;
+        loginErr.style.display = "block";
+      }
+      if (registerErr) {
+        registerErr.textContent = message;
+        registerErr.style.display = "block";
+      }
+    }
+
+    async function startApp() {
+      await import(`./js/config/site.config.js?v=${APP_BUILD}`);
+
+      const config = window.__SITE_CONFIG;
+      if (!config) {
+        throw new Error("Missing js/config/site.config.js — copy site.config.example.js and fill in your own values.");
+      }
+
+      window.__GIPHY_PROXY_URL = window.__GIPHY_PROXY_URL || config.workerUrl;
+
+      const [firebaseAppModule, firestoreModule] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+      ]);
+
+      const { initializeApp } = firebaseAppModule;
+      const { getFirestore } = firestoreModule;
+
+      const app = initializeApp(config.firebase);
+      const db = getFirestore(app);
+
+      // Rend db disponible globalement pour les autres modules
+      window.__firebaseApp = app;
+      window.__db = db;
+
+      // Lance l'app après init Firebase
+      const { bootstrap } = await import(`./js/core/app.js?v=${APP_BUILD}`);
+      bootstrap();
+    }
+  </script>
+
+</body>
+</html>

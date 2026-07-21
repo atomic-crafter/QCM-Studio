@@ -1,0 +1,180 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // CHANGE THIS to your own admin account's email (accounts in this app log
+    // in with username.toLowerCase() + "@qcm.local" — see js/auth/auth.js).
+    // Firestore rules can't read js/config/site.config.js, so this has to be
+    // a literal value here, kept in sync by hand with adminUsername there
+    // and ADMIN_USERNAME in wrangler.toml.
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'youradmin@qcm.local';
+    }
+
+    function isLegacyOwnerByName(name) {
+      return isSignedIn()
+        && name is string
+        && request.auth.token.email == (name.lower() + '@qcm.local');
+    }
+
+    match /leaderboard/{docId} {
+      allow read: if true;
+      allow write: if
+        request.resource.data.keys().hasAll(['pseudo','subjectId','subjectName','score','correct','total','updatedAt'])
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 100
+        && request.resource.data.correct >= 0
+        && request.resource.data.correct <= request.resource.data.total
+        && request.resource.data.total > 0
+        && request.resource.data.total <= 50
+        && docId == request.resource.data.pseudo + '__' + request.resource.data.subjectId;
+    }
+
+    match /presence/{pseudo} {
+      allow read: if true;
+      allow write: if request.resource.data.pseudo == pseudo
+        && request.resource.data.pseudo is string
+        && request.resource.data.pseudo.size() >= 2;
+    }
+
+    match /challenges/{challengeId} {
+      allow read: if true;
+      allow create: if request.resource.data.from is string
+        && request.resource.data.to is string
+        && request.resource.data.questions is list;
+      allow update, delete: if true;
+    }
+
+    match /challenges/{challengeId}/answers/{pseudo} {
+      allow read, write: if true;
+    }
+
+    match /challenges/{challengeId}/messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    match /rooms/{roomId} {
+      allow read, write: if true;
+    }
+
+    match /rooms/{roomId}/answers/{pseudo} {
+      allow read, write: if true;
+    }
+
+    match /rooms/{roomId}/messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // ── PROFILS UTILISATEURS (liés à Firebase Auth UID) ─────────────────────
+    // Lecture restreinte au propriétaire : migration legacy terminée, plus aucun
+    // code client ne lit le profil d'un autre utilisateur (uniquement le sien,
+    // après connexion). Avant ce changement, "allow read: if true" exposait
+    // publiquement les documents legacy encore présents (salt + passwordHash).
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if
+        isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['username','usernameLower','createdAt'])
+        && request.resource.data.username is string
+        && request.resource.data.username.size() >= 2
+        && request.resource.data.username.size() <= 20
+        && request.resource.data.usernameLower is string;
+      allow update: if
+        isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['username','usernameLower','createdAt'])
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.usernameLower == resource.data.usernameLower;
+      allow delete: if false;
+    }
+
+    // ── ACCÈS IA (allowlist gérée par l'admin) ───────────────────────────────
+    match /config/aiAccess {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── CLÉS API PERSO (chiffrées côté client, voir js/ai/apiKeyVault.js) ───────
+    // Strictement privé au propriétaire — même l'admin n'y a pas accès (le
+    // contenu est du ciphertext, mais autant appliquer le moindre privilège).
+    match /userApiKeys/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ── PARTAGE DE CLÉ ENTRE UTILISATEURS (voir js/ai/sharedKeyVault.js) ────────
+    // Le ciphertext ici est chiffré avec une clé PUBLIQUE dont seul le Worker
+    // Cloudflare a la clé privée — donc lisible par n'importe quel compte
+    // connecté SANS risque : personne côté client ne peut le déchiffrer, quel
+    // que soit son niveau d'accès. L'écriture est réservée au propriétaire de
+    // la clé partagée, OU à l'admin (modération : forcer le retrait d'un
+    // partage abusif depuis le panneau admin — voir js/ui/home.js).
+    match /sharedApiKeys/{ownerUid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (request.auth.uid == ownerUid || isAdmin());
+    }
+
+    // ── QCM PERSONNALISÉS ─────────────────────────────────────────────────────
+    match /customQcms/{qcmId} {
+      allow read: if
+        resource.data.isPublic == true
+        || (
+          isSignedIn()
+          && (
+            (resource.data.createdByUid is string && resource.data.createdByUid == request.auth.uid)
+            || isLegacyOwnerByName(resource.data.createdBy)
+            || isAdmin()
+          )
+        );
+      allow create: if
+        isSignedIn()
+        && request.resource.data.keys().hasAll(['title','questions','createdBy','createdByUid','isPublic','createdAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 60
+        && request.resource.data.questions is list
+        && request.resource.data.questions.size() >= 1
+        && request.resource.data.questions.size() <= 50
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdByUid is string
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.isPublic is bool;
+      allow delete: if
+        isSignedIn()
+        && (
+          (resource.data.createdByUid is string && resource.data.createdByUid == request.auth.uid)
+          || isLegacyOwnerByName(resource.data.createdBy)
+          || isAdmin()
+        );
+      allow update: if
+        isSignedIn()
+        && request.resource.data.keys().hasAll(['title','questions','createdBy','createdByUid','isPublic','updatedBy','updatedAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 60
+        && request.resource.data.questions is list
+        && request.resource.data.questions.size() >= 1
+        && request.resource.data.questions.size() <= 50
+        && request.resource.data.createdBy == resource.data.createdBy
+        && (
+          request.resource.data.createdByUid == resource.data.createdByUid
+          || (
+            !(resource.data.createdByUid is string)
+            && request.resource.data.createdByUid == request.auth.uid
+          )
+        )
+        && request.resource.data.isPublic is bool
+        && request.resource.data.updatedBy is string
+        && (
+          request.resource.data.createdByUid == request.auth.uid
+          || isLegacyOwnerByName(resource.data.createdBy)
+          || isAdmin()
+        );
+    }
+  }
+}
