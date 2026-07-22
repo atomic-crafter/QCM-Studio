@@ -8,14 +8,21 @@
 //     Generate your own pair with scripts/generate-shared-key-pair.mjs).
 //     Only this Worker can ever decrypt a shared key; it's used here only to
 //     make the AI call server-side and is never returned to any client.
+//   RESEND_API_KEY (optional)    – for POST /report-bug: sends an email via
+//     Resend (https://resend.com, free tier) when a user submits a bug
+//     report. The report is ALWAYS saved to Firestore (bugReports/{id}) by
+//     the client regardless of this — this secret only adds an email nudge
+//     on top. If unset, /report-bug just no-ops with { ok: true, skipped: true }.
 
 // Défauts pour ce déploiement — configurables sans toucher au code via les
-// [vars] de wrangler.toml (FIREBASE_PROJECT_ID / ADMIN_USERNAME), lues à
-// chaque requête ci-dessous. Doit correspondre à l'email admin dans
-// firestore.rules et à adminUsername dans js/config/site.config.js.
-// CHANGE THESE to your own Firebase project ID and admin account username.
+// [vars] de wrangler.toml (FIREBASE_PROJECT_ID / ADMIN_USERNAME / BUG_REPORT_EMAIL),
+// lues à chaque requête ci-dessous. FIREBASE_PROJECT_ID/ADMIN_USERNAME doivent
+// correspondre à l'email admin dans firestore.rules et à adminUsername dans
+// js/config/site.config.js.
+// CHANGE THESE to your own Firebase project ID, admin account username, and notification email.
 let FIREBASE_PROJECT_ID = 'YOUR_PROJECT_ID';
 let AI_ADMIN_USERNAME = 'YourAdminUsername';
+let BUG_REPORT_EMAIL = 'your@email.com';
 
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
@@ -44,6 +51,7 @@ export default {
   async fetch(request, env) {
     FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID || FIREBASE_PROJECT_ID;
     AI_ADMIN_USERNAME = env.ADMIN_USERNAME || AI_ADMIN_USERNAME;
+    BUG_REPORT_EMAIL = env.BUG_REPORT_EMAIL || BUG_REPORT_EMAIL;
 
     const url = new URL(request.url);
     const pathname = normalizePath(url.pathname);
@@ -74,6 +82,11 @@ export default {
       }
       if (pathname === '/use-shared-key') {
         return handleUseSharedKey(request, env);
+      }
+      // Pas de gate checkAiAccess ici : un invité (sans session Firebase) doit
+      // pouvoir signaler un bug lui aussi.
+      if (pathname === '/report-bug') {
+        return handleReportBug(request, env);
       }
       return json({ error: 'Not found' }, 404);
     }
@@ -642,6 +655,72 @@ Règles :
   } catch (err) {
     console.error('Gemini explain handler error:', err);
     return json({ error: 'Erreur serveur' }, 502);
+  }
+}
+
+// ── SIGNALEMENT DE BUG (best-effort, jamais bloquant) ─────────────────────────
+// Le rapport est de toute façon déjà écrit dans Firestore (bugReports/{id})
+// côté client avant cet appel — cette route ne fait qu'ENVOYER UN EMAIL en
+// plus, via Resend. Si RESEND_API_KEY n'est pas configuré (ex: template
+// QCM Studio pas encore mis en place), on répond juste { ok: true, skipped }
+// plutôt que de faire planter quoi que ce soit côté client.
+async function handleReportBug(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const message = String(body.message || '').trim().slice(0, 2000);
+  if (message.length < 3) {
+    return json({ error: 'Message trop court' }, 400);
+  }
+  const username = String(body.username || 'anonyme').trim().slice(0, 40);
+  const page = String(body.page || '').trim().slice(0, 100);
+  const userAgent = String(body.userAgent || '').trim().slice(0, 300);
+  const appBuild = String(body.appBuild || '').trim().slice(0, 40);
+  const pageUrl = String(body.url || '').trim().slice(0, 300);
+
+  const resendKey = String(env.RESEND_API_KEY || '').trim();
+  if (!resendKey) {
+    return json({ ok: true, skipped: true });
+  }
+
+  const escapeHtml = (s) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  try {
+    const res = await fetchWithTimeout('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${resendKey}`
+      },
+      body: JSON.stringify({
+        from: 'QCM Bug Reports <onboarding@resend.dev>',
+        to: [BUG_REPORT_EMAIL],
+        subject: `🐛 Nouveau rapport de bug — ${username}`,
+        html:
+          `<p><strong>De :</strong> ${escapeHtml(username)}</p>` +
+          `<p><strong>Page :</strong> ${escapeHtml(page)}</p>` +
+          `<p><strong>Build :</strong> ${escapeHtml(appBuild)}</p>` +
+          `<p><strong>URL :</strong> ${escapeHtml(pageUrl)}</p>` +
+          `<p><strong>Navigateur :</strong> ${escapeHtml(userAgent)}</p>` +
+          `<hr><p style="white-space:pre-wrap">${escapeHtml(message)}</p>`
+      })
+    }, 8000);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('Resend error:', res.status, errText);
+      // On ne fait pas échouer la requête pour l'utilisateur — le rapport est
+      // déjà sauvegardé côté Firestore, seul l'email de notif a raté.
+      return json({ ok: true, emailFailed: true });
+    }
+    return json({ ok: true });
+  } catch (err) {
+    console.error('Bug report email error:', err);
+    return json({ ok: true, emailFailed: true });
   }
 }
 

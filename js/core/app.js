@@ -16,6 +16,7 @@ import { initSharedKeyVault } from "../ai/sharedKeyVault.js";
 import { hasAnyOwnOrSharedKey } from "../ai/aiKeyOrchestrator.js";
 import { state, showScreen, toast, configureRuntimeHandlers, setNextQuestionHandler, invokeNextQuestion } from "./runtime.js";
 import { t } from "./i18n.js";
+import { initBugReport, mountBugReportButton } from "./bugReport.js";
 
 const COOKIE_USER = "qcm_auth_user";
 const COOKIE_MODE = "qcm_auth_mode";
@@ -83,6 +84,8 @@ export function bootstrap() {
   initAiAccess(window.__db);
   initApiKeyVault(window.__db);
   initSharedKeyVault(window.__db);
+  initBugReport(window.__db);
+  mountBugReportButton(document.getElementById("bug-report-btn"));
 
   const saved = localStorage.getItem("qcm_user");
   if (saved) document.getElementById("username-input").value = saved;

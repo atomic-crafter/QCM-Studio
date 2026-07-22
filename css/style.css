@@ -76,6 +76,35 @@ body::before {
   color: var(--accent);
 }
 
+/* ══════════════════════════════════════════
+   BUG REPORT BUTTON (always visible, like the language switcher)
+══════════════════════════════════════════ */
+.bug-report-btn-wrap {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 200;
+}
+.bug-report-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s, color .2s, transform .15s;
+}
+.bug-report-btn:hover {
+  background: rgba(124,58,237,.18);
+  color: var(--accent);
+  transform: scale(1.06);
+}
+
 .login-credit {
   position: fixed;
   bottom: 18px;
@@ -180,7 +209,7 @@ body::before {
 
 .field { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.2rem; }
 .field label { font-size: .8rem; letter-spacing: 1px; color: var(--text-dim); text-transform: uppercase; }
-.field input {
+.field input, .field textarea {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -190,7 +219,7 @@ body::before {
   font-size: .95rem; outline: none;
   transition: border-color .2s;
 }
-.field input:focus { border-color: var(--accent); }
+.field input:focus, .field textarea:focus { border-color: var(--accent); }
 .error-msg { color: var(--danger); font-size: .85rem; margin-top: .5rem; display: none; }
 
 /* ══════════════════════════════════════════

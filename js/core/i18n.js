@@ -126,6 +126,15 @@ const TRANSLATIONS = {
     "common.loadingSlash": "// Chargement...",
     "common.today": "Aujourd'hui",
 
+    "bugReport.buttonTitle": "Signaler un bug",
+    "bugReport.title": "🐛 Signaler un bug",
+    "bugReport.intro": "Décris ce qui s'est passé — le plus de détails possible (ce que tu faisais, ce que tu attendais). Ton pseudo, la page actuelle et ton navigateur sont joints automatiquement.",
+    "bugReport.placeholder": "Ex : le calendrier des examens reste en français même après avoir changé de langue...",
+    "bugReport.submitBtn": "Envoyer",
+    "bugReport.sending": "Envoi...",
+    "bugReport.thanks": "Merci ! Ton rapport a bien été envoyé.",
+    "bugReport.failed": "❌ Échec de l'envoi — réessaie plus tard.",
+
     "home.addAccountLabel": "Ajouter un compte",
     "home.addBtn": "Ajouter",
     "home.addExamDateHint": "Ajoute une date sur une matière pour l'afficher ici.",
@@ -654,6 +663,15 @@ const TRANSLATIONS = {
     "common.loadingSlash": "// Loading...",
     "common.today": "Today",
 
+    "bugReport.buttonTitle": "Report a bug",
+    "bugReport.title": "🐛 Report a bug",
+    "bugReport.intro": "Describe what happened — as much detail as possible (what you were doing, what you expected). Your username, current page, and browser are attached automatically.",
+    "bugReport.placeholder": "E.g.: the exam calendar stays in French even after switching language...",
+    "bugReport.submitBtn": "Send",
+    "bugReport.sending": "Sending...",
+    "bugReport.thanks": "Thanks! Your report was sent successfully.",
+    "bugReport.failed": "❌ Failed to send — try again later.",
+
     "home.addAccountLabel": "Add an account",
     "home.addBtn": "Add",
     "home.addExamDateHint": "Add a date on a subject to show it here.",
@@ -1181,6 +1199,15 @@ const TRANSLATIONS = {
     "common.loadError": "// 加载出错",
     "common.loadingSlash": "// 加载中...",
     "common.today": "今天",
+
+    "bugReport.buttonTitle": "反馈问题",
+    "bugReport.title": "🐛 反馈问题",
+    "bugReport.intro": "请描述发生了什么——尽量详细（你在做什么、期望是什么）。你的用户名、当前页面和浏览器信息会自动附上。",
+    "bugReport.placeholder": "例如：切换语言后考试日历仍然显示法语……",
+    "bugReport.submitBtn": "发送",
+    "bugReport.sending": "发送中...",
+    "bugReport.thanks": "谢谢！你的反馈已成功发送。",
+    "bugReport.failed": "❌ 发送失败 — 请稍后重试。",
 
     "home.addAccountLabel": "添加账号",
     "home.addBtn": "添加",

@@ -117,12 +117,14 @@ wrangler secret put GIPHY_API_KEY
 wrangler secret put GEMINI_API_KEY
 wrangler secret put GEMINI_CHAT_KEY
 wrangler secret put SHARED_KEY_VAULT_PRIVATE_KEY
+wrangler secret put RESEND_API_KEY
 ```
 
 - `GIPHY_API_KEY` — free key from [developers.giphy.com](https://developers.giphy.com/), used for the GIF picker in chat.
 - `GEMINI_API_KEY` — used for the built-in "create a QCM from a topic" feature, gated by the admin allowlist.
 - `GEMINI_CHAT_KEY` — used for the "explain why this answer is wrong" AI coach.
 - `SHARED_KEY_VAULT_PRIVATE_KEY` — the private half of the keypair from step 3, as a single-line JSON string.
+- `RESEND_API_KEY` *(optional)* — a free [Resend](https://resend.com) API key, used to email the address in `BUG_REPORT_EMAIL` (see `wrangler.toml`) whenever someone submits a report via the 🐛 button. Without it, reports still save to Firestore (`bugReports` collection) — they just don't also trigger an email.
 
 5. Deploy:
 
@@ -359,12 +361,14 @@ wrangler secret put GIPHY_API_KEY
 wrangler secret put GEMINI_API_KEY
 wrangler secret put GEMINI_CHAT_KEY
 wrangler secret put SHARED_KEY_VAULT_PRIVATE_KEY
+wrangler secret put RESEND_API_KEY
 ```
 
 - `GIPHY_API_KEY` — clé gratuite sur [developers.giphy.com](https://developers.giphy.com/), utilisée pour le picker de GIFs dans le chat.
 - `GEMINI_API_KEY` — utilisée pour la fonctionnalité intégrée "créer un QCM à partir d'un sujet", gérée par l'allowlist admin.
 - `GEMINI_CHAT_KEY` — utilisée pour le coach IA "pourquoi cette réponse est fausse".
 - `SHARED_KEY_VAULT_PRIVATE_KEY` — la moitié privée de la paire de clés de l'étape 3, en JSON sur une seule ligne.
+- `RESEND_API_KEY` *(optionnelle)* — une clé API gratuite [Resend](https://resend.com), utilisée pour envoyer un email à l'adresse `BUG_REPORT_EMAIL` (voir `wrangler.toml`) à chaque signalement de bug via le bouton 🐛. Sans elle, les rapports sont quand même enregistrés dans Firestore (collection `bugReports`) — juste sans email de notif.
 
 5. Déploie :
 

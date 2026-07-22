@@ -6,3 +6,9 @@ workers_dev = true
 [vars]
 FIREBASE_PROJECT_ID = "YOUR_PROJECT_ID"
 ADMIN_USERNAME = "YourAdminUsername"
+BUG_REPORT_EMAIL = "your@email.com"
+
+# Secrets (not here — set via `wrangler secret put <NAME>`):
+#   GIPHY_API_KEY, GEMINI_API_KEY, GEMINI_CHAT_KEY, SHARED_KEY_VAULT_PRIVATE_KEY
+#   RESEND_API_KEY (optional) — enables the email notification on /report-bug;
+#     without it the bug report still saves to Firestore, just no email is sent.

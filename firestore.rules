@@ -176,5 +176,28 @@ service cloud.firestore {
           || isAdmin()
         );
     }
+    // ── RAPPORTS DE BUG (voir js/core/bugReport.js) ──────────────────────────
+    // Écriture ouverte à tout le monde SANS session (les invités doivent
+    // pouvoir signaler un bug eux aussi) mais strictement validée : champs
+    // fixes, tailles bornées. Lecture réservée à l'admin.
+    match /bugReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if
+        request.resource.data.keys().hasOnly(['message','username','page','userAgent','appBuild','url','createdAt'])
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 3
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 40
+        && request.resource.data.page is string
+        && request.resource.data.page.size() <= 100
+        && request.resource.data.userAgent is string
+        && request.resource.data.userAgent.size() <= 300
+        && request.resource.data.appBuild is string
+        && request.resource.data.appBuild.size() <= 40
+        && request.resource.data.url is string
+        && request.resource.data.url.size() <= 300;
+      allow update, delete: if isAdmin();
+    }
   }
 }

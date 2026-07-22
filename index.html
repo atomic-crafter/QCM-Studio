@@ -40,6 +40,9 @@
   <!-- Sélecteur de langue de l'interface : hors des .screen pour rester visible partout -->
   <div id="lang-switcher" class="lang-switcher"></div>
 
+  <!-- Bouton "signaler un bug" : hors des .screen pour rester visible partout -->
+  <div id="bug-report-btn" class="bug-report-btn-wrap"></div>
+
   <!-- ════════ LOGIN ════════ -->
   <div id="login-screen" class="screen active">
     <div class="logo"><span class="bracket">{</span> <span class="sym">QCM</span> <span class="bracket">}</span></div>
@@ -341,6 +344,7 @@
   <!-- Firebase (CDN, pas besoin de npm) -->
   <script type="module">
     const APP_BUILD = "f7b6272"; // commit hash for cache busting
+    window.__APP_BUILD = APP_BUILD;
     const LAST_BUILD_KEY = "qcm_app_build";
     const lastBuild = localStorage.getItem(LAST_BUILD_KEY);
 
