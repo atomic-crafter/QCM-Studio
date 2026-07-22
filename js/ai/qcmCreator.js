@@ -11,6 +11,7 @@ import { callProvider, parseAndValidateQuestions, loadProviderSettings, saveProv
 import { OWN_KEY_PROVIDERS, renderOwnKeyToggleButtons, renderOwnKeyFieldPanels, wireOwnKeyProviders } from "./ownKeyProviderUI.js";
 import { callWithAutoFallback, callSharedKey, listAvailableKeyOptions } from "./aiKeyOrchestrator.js";
 import { t } from "../core/i18n.js";
+import { getFreshAuthToken } from "../auth/auth.js";
 
 const OWN_KEY_ICONS = Object.fromEntries(OWN_KEY_PROVIDERS.map(p => [p.vaultKey, p.icon]));
 const OWN_KEY_LABELS = { claude: "Claude", gemini: "Gemini", deepseek: "DeepSeek", openai: "OpenAI" };
@@ -27,9 +28,16 @@ export async function generateQcmFromPrompt(prompt, count = 10, language = "fr")
   const base = proxyBase();
   if (!base) throw new Error(t("qcmCreator.proxyNotConfigured"));
 
+  // Gated par checkAiAccess côté Worker (admin/allowlist) — token frais à
+  // chaque appel, jamais mis en cache (voir getFreshAuthToken).
+  const token = await getFreshAuthToken();
+
   const res = await fetch(`${base}/generate-qcm`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify({ prompt, count, language })
   });
 

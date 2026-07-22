@@ -527,7 +527,7 @@ const TRANSLATIONS = {
     "qcmProviders.noValidQuestions": "Aucune question valide n'a pu être extraite de la réponse du modèle.",
     "qcmProviders.invalidQuestion": "La question renvoyée par le modèle est invalide.",
 
-    "app.aiAccessRestricted": "🔒 Accès IA restreint — demande à l'admin de t'ajouter à la liste autorisée, ou ajoute/emprunte une clé API dans 🔑 Mes clés IA.",
+    "app.aiAccessRestrictedHint": "ℹ️ Tu n'as pas accès à la clé IA intégrée ni à une clé perso/partagée — demande à l'admin, ajoute/emprunte une clé dans 🔑 Mes clés IA, ou choisis Ollama (local, aucune clé requise) ci-dessous.",
     "app.staleAuthModule": "Le module d'authentification est obsolète (cache). Recharge la page avec Ctrl/Cmd+Shift+R.",
     "app.guestCannotCreateQcm": "⚠️ Mode invité: crée un compte pour créer des QCM",
     "app.signingIn": "Connexion...",
@@ -1055,7 +1055,7 @@ const TRANSLATIONS = {
     "qcmProviders.noValidQuestions": "No valid question could be extracted from the model's response.",
     "qcmProviders.invalidQuestion": "The question returned by the model is invalid.",
 
-    "app.aiAccessRestricted": "🔒 AI access restricted — ask the admin to add you to the allowed list, or add/borrow an API key in 🔑 My AI keys.",
+    "app.aiAccessRestrictedHint": "ℹ️ You don't have access to the built-in AI key or a personal/shared key — ask the admin, add/borrow a key in 🔑 My AI keys, or pick Ollama (local, no key required) below.",
     "app.staleAuthModule": "The authentication module is stale (cache). Reload the page with Ctrl/Cmd+Shift+R.",
     "app.guestCannotCreateQcm": "⚠️ Guest mode: create an account to create quizzes",
     "app.signingIn": "Signing in...",
@@ -1583,7 +1583,7 @@ const TRANSLATIONS = {
     "qcmProviders.noValidQuestions": "无法从模型的响应中提取出任何有效题目。",
     "qcmProviders.invalidQuestion": "模型返回的题目无效。",
 
-    "app.aiAccessRestricted": "🔒 AI 访问受限 — 请管理员将你加入授权名单，或在\"🔑 我的 AI 密钥\"中添加/借用一个 API 密钥。",
+    "app.aiAccessRestrictedHint": "ℹ️ 你还没有内置 AI 密钥或个人/共享密钥的使用权限 — 联系管理员，在\"🔑 我的 AI 密钥\"中添加/借用一个密钥，或者在下面选择 Ollama（本地运行，无需密钥）。",
     "app.staleAuthModule": "认证模块已过期（缓存问题）。请用 Ctrl/Cmd+Shift+R 刷新页面。",
     "app.guestCannotCreateQcm": "⚠️ 访客模式：创建账号后才能创建测验",
     "app.signingIn": "登录中...",

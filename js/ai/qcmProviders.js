@@ -9,6 +9,7 @@
 
 import { normalizeAnswerIndices } from "../core/questionUtils.js";
 import { t } from "../core/i18n.js";
+import { getFreshAuthToken } from "../auth/auth.js";
 
 const SETTINGS_KEY = "qcm_pdf_provider_settings";
 
@@ -80,9 +81,18 @@ async function callGemini(systemPrompt, maxTokens, pdfParts = null) {
   const base = proxyBase();
   if (!base) throw new Error(t("qcmProviders.proxyNotConfigured"));
 
+  // Ce endpoint est gated par checkAiAccess côté Worker (admin/allowlist) —
+  // il exige un Bearer token valide, obtenu frais à chaque appel (jamais mis
+  // en cache) pour ne jamais échouer avec "non authentifié" à cause d'un
+  // token expiré alors que la session est toujours valide.
+  const token = await getFreshAuthToken();
+
   const res = await fetch(`${base}/generate-qcm-advanced`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify({ systemPrompt, maxOutputTokens: maxTokens, pdfParts: pdfParts || undefined })
   });
 
@@ -101,6 +111,16 @@ function validateBaseUrl(baseUrl, exampleUrl) {
   if (!looksLikeUrl(baseUrl)) {
     throw new Error(t("qcmProviders.invalidUrl", { url: baseUrl.slice(0, 60), example: exampleUrl }));
   }
+}
+
+// o1/o3/o4-mini et la famille gpt-5 : seuls modèles OpenAI connus qui exigent
+// `max_completion_tokens` au lieu de `max_tokens` et rejettent toute
+// `temperature` autre que la valeur par défaut. Volontairement conservateur
+// (préfixe/segment exact) pour ne pas se déclencher sur un nom de modèle tiers
+// (OpenRouter, LM Studio, vLLM, Groq...) qui contiendrait ces lettres par hasard.
+function isOpenAiReasoningModel(model) {
+  const m = String(model || "");
+  return /gpt-5/i.test(m) || /(^|\/)(o1|o3|o4-mini)(-|$)/i.test(m);
 }
 
 // Estimation grossière (~4 caractères/token) — suffisante pour dimensionner num_ctx,
@@ -170,6 +190,13 @@ async function callOpenAiCompatible(systemPrompt, maxTokens, config, jsonMode = 
   validateBaseUrl(baseUrl, "https://api.openai.com/v1");
   if (!model) throw new Error(t("qcmProviders.modelNameMissing"));
 
+  // Les modèles "reasoning" d'OpenAI (o1/o3/o4-mini, famille gpt-5) rejettent
+  // `max_tokens` et une température autre que la valeur par défaut (1) avec
+  // une invalid_request_error — il faut leur passer `max_completion_tokens`
+  // et omettre `temperature`. Les autres backends compatibles OpenAI
+  // (OpenRouter, LM Studio, vLLM, Groq, DeepSeek...) gardent l'ancien format.
+  const reasoning = isOpenAiReasoningModel(model);
+
   let res;
   try {
     res = await fetch(`${baseUrl}/chat/completions`, {
@@ -185,8 +212,8 @@ async function callOpenAiCompatible(systemPrompt, maxTokens, config, jsonMode = 
           { role: "user", content: jsonMode ? "Génère le QCM demandé, au format JSON strict précisé ci-dessus." : "Réponds à la consigne ci-dessus." }
         ],
         ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-        temperature: 0.3,
-        max_tokens: maxTokens
+        ...(reasoning ? {} : { temperature: 0.3 }),
+        ...(reasoning ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens })
       })
     });
   } catch (err) {

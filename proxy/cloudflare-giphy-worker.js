@@ -833,8 +833,19 @@ async function callClaudeServerSide(systemPrompt, maxTokens, apiKey, model, pdfP
   return text;
 }
 
+// o1/o3/o4-mini et la famille gpt-5 : seuls modèles OpenAI connus qui exigent
+// `max_completion_tokens` au lieu de `max_tokens` et rejettent toute
+// `temperature` autre que la valeur par défaut. Volontairement conservateur
+// pour ne pas se déclencher sur un modèle DeepSeek (même fonction, provider
+// différent) ou un nom tiers qui contiendrait ces lettres par hasard.
+function isOpenAiReasoningModel(model) {
+  const m = String(model || '');
+  return /gpt-5/i.test(m) || /(^|\/)(o1|o3|o4-mini)(-|$)/i.test(m);
+}
+
 async function callOpenAiCompatibleServerSide(systemPrompt, maxTokens, apiKey, baseUrl, defaultModel, jsonMode, model) {
   const m = model || defaultModel;
+  const reasoning = isOpenAiReasoningModel(m);
   const res = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -845,8 +856,8 @@ async function callOpenAiCompatibleServerSide(systemPrompt, maxTokens, apiKey, b
         { role: 'user', content: jsonMode ? 'Génère le QCM demandé, au format JSON strict précisé ci-dessus.' : 'Réponds à la consigne ci-dessus.' }
       ],
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-      temperature: 0.3,
-      max_tokens: maxTokens
+      ...(reasoning ? {} : { temperature: 0.3 }),
+      ...(reasoning ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens })
     })
   }, 20000);
   const data = await res.json().catch(() => ({}));

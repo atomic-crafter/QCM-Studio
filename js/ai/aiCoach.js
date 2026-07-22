@@ -8,6 +8,7 @@
 import { buildExplainAnswerPrompt } from "./qcmPromptBuilder.js";
 import { callWithAutoFallback } from "./aiKeyOrchestrator.js";
 import { t } from "../core/i18n.js";
+import { getFreshAuthToken } from "../auth/auth.js";
 
 function proxyBase() {
   return (window.__GIPHY_PROXY_URL || localStorage.getItem("qcm_giphy_proxy_url") || "").replace(/\/$/, "");
@@ -43,7 +44,7 @@ export async function requestAiWrongAnswerExplanation({
     throw new Error(t("qcmCreator.proxyNotConfigured"));
   }
 
-  const token = localStorage.getItem("qcm_auth_token") || "";
+  const token = await getFreshAuthToken();
 
   const res = await fetch(`${base}/explain-answer`, {
     method: "POST",

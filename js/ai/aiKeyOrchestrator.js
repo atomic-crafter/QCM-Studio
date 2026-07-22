@@ -9,6 +9,7 @@ import { callProvider, loadProviderSettings } from "./qcmProviders.js";
 import { isVaultUnlocked, getConfiguredProviders, getApiKey, hasAnyApiKey } from "./apiKeyVault.js";
 import { listSharersForProvider, hasAnySharedKeyAvailable, ALL_PROVIDERS } from "./sharedKeyVault.js";
 import { t } from "../core/i18n.js";
+import { getFreshAuthToken } from "../auth/auth.js";
 
 // Vrai si l'utilisateur a de quoi utiliser l'IA sans passer par la clé
 // admin/allowlist : sa propre clé, OU une clé qu'un autre utilisateur lui a
@@ -37,7 +38,7 @@ function proxyBase() {
 export async function callSharedKey({ ownerUid, provider, systemPrompt, maxTokens = 4096, jsonMode = true, model, pdfParts = null }) {
   const base = proxyBase();
   if (!base) throw new Error(t("qcmCreator.proxyNotConfigured"));
-  const token = localStorage.getItem("qcm_auth_token") || "";
+  const token = await getFreshAuthToken();
 
   const res = await fetch(`${base}/use-shared-key`, {
     method: "POST",

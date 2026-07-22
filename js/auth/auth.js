@@ -31,13 +31,19 @@ function normalizeUsername(username) {
   return String(username || "").trim();
 }
 
-async function storeAuthToken(user) {
-  if (!user) return;
+// Renvoie un ID token TOUJOURS frais (Firebase le rafraîchit sous le capot si
+// besoin) — à appeler juste avant chaque requête au Worker, jamais mis en
+// cache nous-mêmes. Un ID token Firebase expire au bout d'1h ; le mettre en
+// cache (ex: dans localStorage à la connexion) fait échouer silencieusement
+// toute requête Worker passé ce délai avec "non authentifié", alors que
+// l'utilisateur est toujours bien connecté côté client.
+export async function getFreshAuthToken() {
+  if (!auth?.currentUser) return "";
   try {
-    const token = await getIdToken(user);
-    localStorage.setItem("qcm_auth_token", token);
+    return await getIdToken(auth.currentUser);
   } catch (e) {
-    console.error("Failed to store auth token:", e);
+    console.error("Failed to get fresh auth token:", e);
+    return "";
   }
 }
 
@@ -107,9 +113,6 @@ export async function registerUser(usernameRaw, password) {
       createdAt: serverTimestamp()
     });
 
-    // Store auth token for API requests
-    await storeAuthToken(cred.user);
-
     return username;
   } catch (error) {
     if (error?.code === "auth/email-already-in-use") {
@@ -130,11 +133,7 @@ export async function loginUser(usernameRaw, password) {
 
   const email = usernameToAuthEmail(username);
   try {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    
-    // Store auth token for API requests
-    await storeAuthToken(cred.user);
-    
+    await signInWithEmailAndPassword(auth, email, password);
     return username;
   } catch (error) {
     const code = error?.code || "";
@@ -159,7 +158,6 @@ export async function loginUser(usernameRaw, password) {
 
 export async function logoutUser() {
   if (!auth) return;
-  localStorage.removeItem("qcm_auth_token");
   await signOut(auth);
 }
 
@@ -193,20 +191,15 @@ export async function getCurrentSessionUser() {
 export function onAuthChange(callback) {
   return onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      localStorage.removeItem("qcm_auth_token");
       callback(null);
       return;
     }
 
     const resolved = await resolveUserSession(user);
     if (!resolved) {
-      localStorage.removeItem("qcm_auth_token");
       callback(null);
       return;
     }
-
-    // Store auth token for API requests
-    await storeAuthToken(user);
 
     callback(resolved);
   });

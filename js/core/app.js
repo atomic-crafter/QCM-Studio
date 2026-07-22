@@ -44,15 +44,19 @@ function getOrCreateGuestPseudo() {
 
 configureRuntimeHandlers({ renderHome, renderLeaderboard });
 
-// Bloque l'accès à une fonctionnalité IA si l'utilisateur n'est ni l'admin, ni
-// sur l'allowlist (voir js/aiAccess.js) — SAUF s'il a configuré sa propre clé
-// API (Claude/Gemini/DeepSeek/OpenAI), auquel cas il n'utilise pas la
-// ressource partagée et n'a pas besoin d'autorisation admin.
+// Prévient (mais ne bloque JAMAIS l'accès à l'interface) quand l'utilisateur
+// n'est ni l'admin, ni sur l'allowlist (voir js/aiAccess.js), et n'a configuré
+// aucune clé API perso/partagée — ces deux ressources sont les seules qui
+// coûtent quelque chose à quelqu'un d'autre (quota admin, clé partagée), donc
+// c'est la seule chose qu'on gate. On ne bloque PAS l'ouverture de
+// l'interface elle-même : un utilisateur qui préfère ne pas enregistrer de
+// clé dans Firebase peut très bien n'utiliser que son Ollama local (aucune
+// clé, aucune ressource partagée) — le sélectionner dans le modal fonctionne
+// très bien sans passer par cette vérification.
 async function guardAiAccess(onAllowed) {
   const allowed = (await canUseAi(state.user, state.isGuest)) || (await hasAnyOwnOrSharedKey(state.uid, state.user, state.isGuest));
   if (!allowed) {
-    toast(t("app.aiAccessRestricted"));
-    return;
+    toast(t("app.aiAccessRestrictedHint"));
   }
   onAllowed();
 }
