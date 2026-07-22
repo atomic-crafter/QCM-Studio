@@ -32,6 +32,7 @@ import { canUseAi } from "../auth/aiAccess.js";
 import { hasAnyOwnOrSharedKey } from "../ai/aiKeyOrchestrator.js";
 import { renderLatexHtml } from "../core/latex.js";
 import { loadCustomQcmPickerInto } from "../ui/customQcmPicker.js";
+import { t } from "../core/i18n.js";
 
 // ── MODULE STATE ──────────────────────────────────────────────────────────────
 let db;
@@ -219,7 +220,7 @@ export async function createRoom(name, isPublic, password, questionTime = 60) {
   const safeQuestionTimeSec = Math.max(10, Math.min(120, Number.parseInt(questionTime, 10) || 60));
 
   await setDoc(doc(db, 'rooms', roomId), {
-    name:        name || `Salle de ${myPseudo}`,
+    name:        name || t("room.defaultRoomName", { pseudo: myPseudo }),
     host:        myPseudo,
     password:    isPublic ? null : (password || null),
     isPublic,
@@ -250,24 +251,24 @@ export async function joinRoom(code, passwordAttempt) {
   roomId   = (code || '').toUpperCase().trim();
 
   const snap = await getDoc(doc(db, 'rooms', roomId));
-  if (!snap.exists())                           { toast('❌ Salle introuvable');             return false; }
+  if (!snap.exists())                           { toast(t("room.roomNotFound"));             return false; }
   const roomRef = doc(db, 'rooms', roomId);
   const data = snap.data();
 
   await _pruneOfflinePlayers(roomRef, data);
 
   const freshSnap = await getDoc(roomRef);
-  if (!freshSnap.exists())                      { toast('❌ Salle introuvable');             return false; }
+  if (!freshSnap.exists())                      { toast(t("room.roomNotFound"));             return false; }
   const freshData = freshSnap.data();
 
   if (_isRoomOrphaned(freshData)) {
     try { await deleteDoc(roomRef); } catch (e) {}
-    toast('⚠️ Salle expirée (plus aucun joueur connecté)');
+    toast(t("room.roomExpired"));
     return false;
   }
 
-  if (freshData.status === 'finished')               { toast('⚠️ Partie terminée');               return false; }
-  if (!freshData.isPublic && freshData.password !== passwordAttempt) { toast('❌ Mot de passe incorrect'); return false; }
+  if (freshData.status === 'finished')               { toast(t("room.gameFinished"));               return false; }
+  if (!freshData.isPublic && freshData.password !== passwordAttempt) { toast(t("room.wrongPassword")); return false; }
 
   if (!freshData.players.includes(myPseudo)) {
     const disambiguated = _disambiguateGuestPseudo(myPseudo, freshData.players);
@@ -277,7 +278,7 @@ export async function joinRoom(code, passwordAttempt) {
       try { sessionStorage.setItem('qcm_guest_pseudo', disambiguated); } catch (e) {}
       const pseudoEl = document.getElementById('home-pseudo');
       if (pseudoEl) pseudoEl.textContent = disambiguated;
-      toast(`ℹ️ Pseudo déjà pris dans cette salle, tu es "${disambiguated}"`);
+      toast(t("room.pseudoTaken", { pseudo: disambiguated }));
     }
 
     const readyValue = freshData.status === 'playing'
@@ -378,7 +379,7 @@ export function listenPublicRooms(callback) {
     },
     err => {
       console.error('listenPublicRooms error:', err);
-      toast('❌ Rooms Firestore bloqué (règles)');
+      toast(t("room.roomsBlocked"));
       callback([]);
     }
   );
@@ -396,7 +397,7 @@ function _startLobbyListener() {
     doc(db, 'rooms', roomId),
     snap => {
       if (!snap.exists()) {
-        toast('⚠️ La salle a été fermée par l\'hôte');
+        toast(t("room.closedByHost"));
         leaveRoom(false);
         showScreen('home-screen');
         return;
@@ -416,7 +417,7 @@ function _startLobbyListener() {
           if (roomId) {
             deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
           }
-          toast('⚠️ Salle fermée (plus aucun joueur connecté)');
+          toast(t("room.roomClosedNoPlayers"));
           leaveRoom(false);
           showScreen('home-screen');
           return;
@@ -446,7 +447,7 @@ function _startLobbyListener() {
     },
     err => {
       console.error('room listener error:', err);
-      toast('❌ Accès salle refusé (règles Firestore)');
+      toast(t("room.accessDenied"));
       leaveRoom(false);
       showScreen('home-screen');
     }
@@ -460,20 +461,20 @@ function _renderLobby() {
 
   document.getElementById('lobby-title').textContent = name;
   document.getElementById('lobby-code').textContent  = roomId;
-  document.getElementById('lobby-type').textContent  = isPublic ? '🌐 Publique' : '🔒 Privée';
+  document.getElementById('lobby-type').textContent  = isPublic ? t("room.public") : t("room.private");
 
   document.getElementById('lobby-players-list').innerHTML = players.map(p => `
     <div class="lobby-player-chip">
       <div class="lobby-player-avatar">${p[0].toUpperCase()}</div>
-      <span class="lobby-player-name">${p}${_isPlayerConnected(p) ? '' : ' (hors ligne)'}</span>
+      <span class="lobby-player-name">${p}${_isPlayerConnected(p) ? '' : t("room.offlineSuffix")}</span>
       ${p === host ? '<span class="lobby-host-badge">👑</span>' : ''}
     </div>
   `).join('');
 
   const subjectDisplay = document.getElementById('lobby-subject-display');
   subjectDisplay.textContent = subjectId
-    ? `${subjectIcon} ${subjectName} · ⏱ ${roomQuestionTimeSec || 60}s / question`
-    : `// Aucun thème sélectionné · ⏱ ${roomQuestionTimeSec || 60}s / question`;
+    ? `${subjectIcon} ${subjectName}${t("room.perQuestionSuffix", { sec: roomQuestionTimeSec || 60 })}`
+    : `${t("room.noThemeSelected")}${t("room.perQuestionSuffix", { sec: roomQuestionTimeSec || 60 })}`;
 
   const isMe = (myPseudo === host);
   document.getElementById('lobby-host-controls').style.display = isMe ? 'flex' : 'none';
@@ -511,7 +512,7 @@ export function openRoomSubjectPicker() {
   const archivedSubjects = getArchivedSubjects();
   const archivedHtml = archivedSubjects.length ? `
     <details class="picker-archived-details">
-      <summary>🗂️ Archivés (${archivedSubjects.length})</summary>
+      <summary>${t("home.archivedListTitle", { count: archivedSubjects.length })}</summary>
       <div class="picker-archived-list">${archivedSubjects.map(_renderRoomSubjectBlock).join('')}</div>
     </details>
   ` : '';
@@ -519,15 +520,15 @@ export function openRoomSubjectPicker() {
   wrap.innerHTML = `
     <div class="picker-modal">
       <div class="picker-modal-header">
-        <h3>🎮 Choisir le thème</h3>
+        <h3>${t("room.chooseThemeModalTitle")}</h3>
         <button class="picker-close" onclick="document.getElementById('room-subject-picker').remove()">✕</button>
       </div>
       <div class="picker-subjects">${subjects}</div>
       ${archivedHtml}
       <div class="picker-custom-section">
         <details open>
-          <summary>✨ Mes QCM & communauté</summary>
-          <div class="picker-custom-loading" id="room-picker-custom-list">// Chargement...</div>
+          <summary>${t("home.myQcmsAndCommunity")}</summary>
+          <div class="picker-custom-loading" id="room-picker-custom-list">${t("common.loadingSlash")}</div>
         </details>
       </div>
     </div>
@@ -551,7 +552,7 @@ export function openRoomSubjectPicker() {
     await updateDoc(doc(db, 'rooms', roomId), {
       subjectId, subjectName, subjectIcon, subjectLatex: subject.latex === true, questions: qs
     });
-    toast(`✅ Thème : ${subjectName}`);
+    toast(t("room.themeSetToast", { name: subjectName }));
   };
 
   loadCustomQcmPickerInto(
@@ -570,7 +571,7 @@ export function openRoomSubjectPicker() {
         subjectLatex: qcm.latex === true,
         questions:   qs
       });
-      toast(`✅ Thème : ${qcm.title}`);
+      toast(t("room.themeSetToast", { name: qcm.title }));
     }
   );
 }
@@ -733,8 +734,8 @@ function _renderRoomLiveScoreboard() {
   board.innerHTML = rows.map((row, idx) => `
     <div class="room-live-row ${row.pseudo === myPseudo ? 'me' : ''}">
       <span class="room-live-rank">#${idx + 1}</span>
-      <span class="room-live-name">${row.pseudo === myPseudo ? `${row.pseudo} (moi)` : row.pseudo}</span>
-      <span class="room-live-stats">${row.points} pts · ${row.correct}/${questions.length}</span>
+      <span class="room-live-name">${row.pseudo === myPseudo ? `${row.pseudo}${t("room.meSuffix")}` : row.pseudo}</span>
+      <span class="room-live-stats">${row.points} ${t("room.pointsUnit")} · ${row.correct}/${questions.length}</span>
     </div>
   `).join('');
 }
@@ -748,7 +749,7 @@ function _renderRoomQuestion() {
   const q = questions[currentIndex];
   const { players, subjectIcon } = roomData;
 
-  document.getElementById('quiz-subject-label').textContent = `🎮 Salle ${roomId}`;
+  document.getElementById('quiz-subject-label').textContent = t("room.roomLabelInQuiz", { code: roomId });
   document.getElementById('q-num').textContent   = currentIndex + 1;
   document.getElementById('q-total').textContent = questions.length;
   document.getElementById('q-category').textContent = q.cat || '';
@@ -759,8 +760,8 @@ function _renderRoomQuestion() {
   nextBtn.classList.remove('show');
   nextBtn.disabled = false;
   nextBtn.dataset.pending = '0';
-  nextBtn.textContent = 'Suivant →';
-  document.getElementById('streak-badge').textContent = myStreak >= 3 ? `🔥 ${myStreak}` : '';
+  nextBtn.textContent = t("quiz.nextBtn");
+  document.getElementById('streak-badge').textContent = myStreak >= 3 ? t("room.streakBadgeShort", { count: myStreak }) : '';
 
   document.getElementById('progress-bar').style.width = (currentIndex / questions.length * 100) + '%';
 
@@ -775,7 +776,7 @@ function _renderRoomQuestion() {
   panel.innerHTML = players.map(p => `
     <div class="room-player-status" id="rps-${CSS.escape(p)}">
       <span class="rps-avatar">${p[0].toUpperCase()}</span>
-      <span class="rps-name">${p === myPseudo ? `${p} (moi)` : p}</span>
+      <span class="rps-name">${p === myPseudo ? `${p}${t("room.meSuffix")}` : p}</span>
       <span class="rps-icon" id="rps-icon-${CSS.escape(p)}">⏳</span>
     </div>
   `).join('');
@@ -807,8 +808,8 @@ function _renderRoomQuestion() {
     skipBtn.id        = 'room-host-skip-btn';
     skipBtn.type      = 'button';
     skipBtn.className = 'btn secondary sm';
-    skipBtn.title     = "Passer à la question suivante sans attendre les autres joueurs. Ceux qui n'ont pas encore répondu auront 0 point pour cette question.";
-    skipBtn.textContent = '⏭️ Forcer le passage';
+    skipBtn.title     = t("room.skipBtnTitle");
+    skipBtn.textContent = t("room.forcePassBtn");
     skipBtn.onclick   = () => forceAdvanceRoomQuestion();
     nextBtn.after(skipBtn);
   }
@@ -878,7 +879,7 @@ async function _roomRevealAnswer(selected) {
 
   if (q.exp) {
     const el = document.getElementById('explanation');
-    el.innerHTML = `<strong>💡 Explication :</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
+    el.innerHTML = `<strong>${t("quiz.explanationLabel")}</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
     el.classList.add('show');
   }
 
@@ -886,13 +887,13 @@ async function _roomRevealAnswer(selected) {
     myStreak++;
     myMaxStreak = Math.max(myMaxStreak, myStreak);
     myScore += DEFAULT_SCORING.baseCorrectPoints + computeStreakBonus(myStreak);
-    if (myStreak >= 3) toast(`🔥 Série de ${myStreak} !`);
+    if (myStreak >= 3) toast(t("quiz.streakToast", { count: myStreak }));
   } else {
     myStreak = 0;
-    if (selected === -1) toast('⏱ Temps écoulé !');
+    if (selected === -1) toast(t("quiz.timeUpToast"));
     renderAskAiInRoomChatAction(q, selected);
   }
-  document.getElementById('streak-badge').textContent = myStreak >= 3 ? `🔥 ${myStreak}` : '';
+  document.getElementById('streak-badge').textContent = myStreak >= 3 ? t("room.streakBadgeShort", { count: myStreak }) : '';
 
   const localMine = roomAnswersByPseudo.get(myPseudo) || { pseudo: myPseudo, answers: [], answerAtByQ: {} };
   const localAnswers = Array.isArray(localMine.answers) ? [...localMine.answers] : [];
@@ -925,7 +926,7 @@ async function _roomRevealAnswer(selected) {
   nextBtn.disabled = false;
   nextBtn.dataset.pending = '0';
   nextBtn.textContent =
-    currentIndex < questions.length - 1 ? 'Suivant →' : 'Voir les résultats →';
+    currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
 
   _updatePlayersPanel();
 }
@@ -937,7 +938,7 @@ function renderAskAiInRoomChatAction(q, selected) {
   if (!q.exp) {
     expEl.innerHTML = '';
   } else {
-    expEl.innerHTML = `<strong>💡 Explication :</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
+    expEl.innerHTML = `<strong>${t("quiz.explanationLabel")}</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
   }
 
   const row = document.createElement('div');
@@ -946,20 +947,20 @@ function renderAskAiInRoomChatAction(q, selected) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'btn secondary';
-  btn.textContent = "🤖 Demander à l'IA (chat)";
+  btn.textContent = t("room.askAiChatBtn");
 
   btn.onclick = async () => {
     if (btn.dataset.loading === '1') return;
 
     const allowed = (await canUseAi(state.user, state.isGuest)) || (await hasAnyOwnOrSharedKey(state.uid, state.user, state.isGuest));
     if (!allowed) {
-      toast('🔒 Accès IA restreint — demande à l\'admin de t\'ajouter à la liste autorisée, ou ajoute ta propre clé API dans 🔑 Mes clés IA.');
+      toast(t("quiz.aiAccessRestricted"));
       return;
     }
 
     btn.dataset.loading = '1';
     btn.disabled = true;
-    btn.textContent = '⏳ IA en cours...';
+    btn.textContent = t("quiz.aiLoading");
 
     try {
       const explanation = await requestAiWrongAnswerExplanation({
@@ -973,14 +974,14 @@ function renderAskAiInRoomChatAction(q, selected) {
         username: state.user
       });
 
-      await postAiCoachMessage(`Q${currentIndex + 1} — ${explanation}`, { latexEnabled: isLatexEnabled() });
-      toast('🤖 Explication envoyée dans le chat');
+      await postAiCoachMessage(t("room.aiCoachChatPrefix", { num: currentIndex + 1, explanation }), { latexEnabled: isLatexEnabled() });
+      toast(t("room.aiExplanationSentToast"));
     } catch (e) {
-      toast(`❌ IA: ${e?.message || 'erreur'}`);
+      toast(t("quiz.aiErrorToast", { msg: e?.message || t("common.genericError") }));
     } finally {
       btn.dataset.loading = '0';
       btn.disabled = false;
-      btn.textContent = "🤖 Demander à l'IA (chat)";
+      btn.textContent = t("room.askAiChatBtn");
     }
   };
 
@@ -992,7 +993,7 @@ function renderAskAiInRoomChatAction(q, selected) {
 export async function nextRoomQuestion() {
   const nextBtn = document.getElementById('btn-next');
   if (!roomId || !myPseudo || !nextBtn) {
-    toast('❌ Salle invalide, retourne au menu puis rejoins la salle');
+    toast(t("room.invalidRoomToast"));
     return;
   }
 
@@ -1000,7 +1001,7 @@ export async function nextRoomQuestion() {
 
   nextBtn.dataset.pending = '1';
   nextBtn.disabled = true;
-  nextBtn.textContent = 'En attente des joueurs...';
+  nextBtn.textContent = t("room.waitingForPlayersBtn");
 
   try {
     await updateDoc(doc(db, 'rooms', roomId), {
@@ -1024,10 +1025,10 @@ export async function nextRoomQuestion() {
     }
   } catch (e) {
     console.error('nextRoomQuestion failed:', e);
-    toast(`❌ Impossible de valider cette manche (${e?.code || e?.message || 'erreur'})`);
+    toast(t("room.cannotValidateToast", { code: e?.code || e?.message || t("home.unknownError") }));
     nextBtn.dataset.pending = '0';
     nextBtn.disabled = false;
-    nextBtn.textContent = currentIndex < questions.length - 1 ? 'Suivant →' : 'Voir les résultats →';
+    nextBtn.textContent = currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
   }
 }
 
@@ -1061,9 +1062,7 @@ function _checkAndAdvance() {
 // exactement comme un timeout normal. Rien à écrire de spécial pour eux.
 export function forceAdvanceRoomQuestion() {
   if (!isHost || !roomData || advancingQ) return;
-  const confirmed = confirm(
-    "Forcer le passage à la question suivante ? Les joueurs qui n'ont pas encore répondu auront 0 point pour cette question."
-  );
+  const confirmed = confirm(t("room.confirmForcePass"));
   if (!confirmed) return;
   _advanceToNextQuestion();
 }
@@ -1185,7 +1184,7 @@ function _renderRoomResults(scores, me, rd) {
   const myRank = scores.findIndex(s => s.pseudo === me);
 
   document.getElementById('room-res-title').textContent =
-    myRank === 0 ? '🏆 Victoire !' : myRank === 1 ? '🥈 Podium !' : '🎯 Bien joué !';
+    myRank === 0 ? t("room.resultVictory") : myRank === 1 ? t("room.resultPodium") : t("room.resultGoodJob");
 
   document.getElementById('room-res-subject').textContent =
     rd ? `${rd.subjectIcon || ''} ${rd.subjectName || ''}` : '';
@@ -1197,11 +1196,11 @@ function _renderRoomResults(scores, me, rd) {
       <div class="room-res-avatar">${s.pseudo[0].toUpperCase()}</div>
       <div class="room-res-info">
         <div class="room-res-name">
-          ${s.pseudo}${s.pseudo === me ? ' <span class="you-tag">vous</span>' : ''}
+          ${s.pseudo}${s.pseudo === me ? ` <span class="you-tag">${t("room.youTagPlain")}</span>` : ''}
         </div>
       </div>
       <div class="room-res-score-block">
-        <div class="room-res-score">${s.points} pts</div>
+        <div class="room-res-score">${s.points} ${t("room.pointsUnit")}</div>
         <div class="room-res-pct">${s.correct}/${s.total} · ${Math.round((s.correct / s.total) * 100)}%</div>
       </div>
     </div>

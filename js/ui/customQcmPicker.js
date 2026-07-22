@@ -6,6 +6,7 @@
 // "customQcms", donc un seul fetch suffit pour les deux.
 
 import { getUserQcms, getPublicQcms } from "../data-access/firebase.js";
+import { t } from "../core/i18n.js";
 
 function escAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -33,15 +34,15 @@ function renderCustomQcmRow(qcm) {
 
   return `
     <div class="picker-subject-block">
-      <div class="picker-subject-title">✨ ${escAttr(qcm.title || "Sans titre")}</div>
-      <div class="picker-custom-author">// par ${escAttr(qcm.createdBy || "?")}</div>
+      <div class="picker-subject-title">✨ ${escAttr(qcm.title || t("home.untitled"))}</div>
+      <div class="picker-custom-author">${t("home.byAuthor", { author: escAttr(qcm.createdBy || "?") })}</div>
       <div class="picker-modes">
         <button class="picker-mode-btn btn-picker-custom-qcm"
           data-id="${escAttr(qcm.id)}"
           data-title="${escAttr(qcm.title || "")}"
           data-latex="${latex ? "true" : "false"}"
           data-questions="${safeQuestions}">
-          ▶ Jouer · ${count} Q
+          ${t("home.playQuizBtn", { count })}
         </button>
       </div>
     </div>
@@ -50,15 +51,15 @@ function renderCustomQcmRow(qcm) {
 
 export function renderCustomQcmPickerHtml({ userQcms, communityQcms }) {
   if (!userQcms.length && !communityQcms.length) {
-    return `<div class="picker-custom-empty">// Aucun QCM perso/communauté pour l'instant.</div>`;
+    return `<div class="picker-custom-empty">${t("customQcmPicker.noneYet")}</div>`;
   }
 
   let html = "";
   if (userQcms.length) {
-    html += `<div class="picker-custom-group-title">📚 Mes QCM</div>${userQcms.map(renderCustomQcmRow).join("")}`;
+    html += `<div class="picker-custom-group-title">${t("home.myQcmsHeader")}</div>${userQcms.map(renderCustomQcmRow).join("")}`;
   }
   if (communityQcms.length) {
-    html += `<div class="picker-custom-group-title">🌐 Communauté</div>${communityQcms.map(renderCustomQcmRow).join("")}`;
+    html += `<div class="picker-custom-group-title">${t("home.communityHeader")}</div>${communityQcms.map(renderCustomQcmRow).join("")}`;
   }
   return html;
 }
@@ -74,7 +75,7 @@ export async function loadCustomQcmPickerInto(containerEl, username, uid, onPick
     const { userQcms, communityQcms } = await fetchPickableCustomQcms(username, uid);
     containerEl.innerHTML = renderCustomQcmPickerHtml({ userQcms, communityQcms });
   } catch (e) {
-    containerEl.innerHTML = `<div class="picker-custom-empty">// Erreur de chargement des QCM perso.</div>`;
+    containerEl.innerHTML = `<div class="picker-custom-empty">${t("customQcmPicker.loadError")}</div>`;
     return;
   }
 

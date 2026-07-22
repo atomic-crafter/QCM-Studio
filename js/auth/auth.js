@@ -17,6 +17,7 @@ import {
   setDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { t } from "../core/i18n.js";
 
 let auth;
 let db;
@@ -42,10 +43,10 @@ async function storeAuthToken(user) {
 
 function validateUsername(username) {
   if (!username || username.length < 2 || username.length > 20) {
-    throw new Error("Le nom d'utilisateur doit faire 2 à 20 caractères");
+    throw new Error(t("auth.err.usernameLength"));
   }
   if (!/^[a-zA-Z0-9_\-]+$/.test(username)) {
-    throw new Error("Seuls les lettres, chiffres, _ et - sont autorisés");
+    throw new Error(t("auth.err.usernameChars"));
   }
 }
 
@@ -57,33 +58,33 @@ function authEmailToUsername(email) {
   return String(email || "").split("@")[0] || "";
 }
 
-function formatAuthError(error, fallback) {
+function formatAuthError(error, fallbackKey) {
   const code = error?.code || "";
 
   if (code === "auth/operation-not-allowed") {
-    return "Email/Password n'est pas activé dans Firebase Console → Authentication → Sign-in method";
+    return t("auth.err.emailNotEnabled");
   }
   if (code === "auth/too-many-requests") {
-    return "Trop de tentatives. Réessaie dans quelques minutes";
+    return t("auth.err.tooManyRequests");
   }
   if (code === "auth/network-request-failed") {
-    return "Problème réseau. Vérifie ta connexion";
+    return t("auth.err.networkFailed");
   }
   if (code === "auth/user-disabled") {
-    return "Ce compte est désactivé";
+    return t("auth.err.userDisabled");
   }
   if (code === "auth/invalid-api-key") {
-    return "Configuration Firebase invalide (API key)";
+    return t("auth.err.invalidApiKey");
   }
   if (code === "auth/invalid-email") {
-    return "Format d'email interne invalide — contacte l'admin [auth/invalid-email]";
+    return t("auth.err.invalidEmail");
   }
   if (code === "auth/weak-password") {
-    return "Mot de passe trop court pour Firebase (minimum 6 caractères)";
+    return t("auth.err.weakPasswordFirebase");
   }
 
   // Include the raw code so the user can report exactly what went wrong
-  return `${fallback} [${code || "inconnu"}]`;
+  return t("auth.err.withCode", { fallback: t(fallbackKey), code: code || t("auth.err.unknownCode") });
 }
 
 export async function registerUser(usernameRaw, password) {
@@ -91,7 +92,7 @@ export async function registerUser(usernameRaw, password) {
   validateUsername(username);
 
   if (!password || password.length < 6) {
-    throw new Error("Le mot de passe doit faire au moins 6 caractères");
+    throw new Error(t("auth.err.passwordLength"));
   }
 
   const email = usernameToAuthEmail(username);
@@ -112,19 +113,19 @@ export async function registerUser(usernameRaw, password) {
     return username;
   } catch (error) {
     if (error?.code === "auth/email-already-in-use") {
-      throw new Error("Ce nom d'utilisateur est déjà pris");
+      throw new Error(t("auth.err.usernameTaken"));
     }
     if (error?.code === "auth/weak-password") {
-      throw new Error("Mot de passe trop faible");
+      throw new Error(t("auth.err.weakPassword"));
     }
-    throw new Error(formatAuthError(error, "Inscription impossible"));
+    throw new Error(formatAuthError(error, "auth.err.registerFailedFallback"));
   }
 }
 
 export async function loginUser(usernameRaw, password) {
   const username = normalizeUsername(usernameRaw);
   if (!username || !password) {
-    throw new Error("Remplis tous les champs");
+    throw new Error(t("auth.err.fillAllFields"));
   }
 
   const email = usernameToAuthEmail(username);
@@ -149,10 +150,10 @@ export async function loginUser(usernameRaw, password) {
     ]);
 
     if (badCredentialCodes.has(code)) {
-      throw new Error("Nom d'utilisateur ou mot de passe incorrect");
+      throw new Error(t("auth.err.badCredentials"));
     }
 
-    throw new Error(formatAuthError(error, "Connexion impossible"));
+    throw new Error(formatAuthError(error, "auth.err.loginFailedFallback"));
   }
 }
 

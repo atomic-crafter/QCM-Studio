@@ -102,3 +102,37 @@ export async function extractTextFromPdfs(files, onProgress) {
     totalFiles: files.length
   };
 }
+
+/**
+ * Encode un fichier PDF en base64 pour l'envoyer tel quel à une API qui lit
+ * les PDF nativement (Gemini inline_data, Claude document block) — utilisé
+ * par le mode "envoyer le PDF directement à l'IA" (voir js/ai/qcmFromPdf.js),
+ * alternative à l'extraction de texte côté navigateur (plus fiable pour les
+ * tableaux/schémas/formules, puisque le modèle lit le PDF lui-même).
+ * @param {File} file
+ * @returns {Promise<string>} base64 sans le préfixe "data:...;base64,"
+ */
+export async function fileToBase64(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Encode plusieurs fichiers PDF en base64, prêts à être envoyés comme pièces
+ * jointes natives à une API (voir fileToBase64).
+ * @param {File[]} files
+ * @returns {Promise<{mimeType: string, data: string, name: string}[]>}
+ */
+export async function filesToBase64Parts(files) {
+  return Promise.all(files.map(async file => ({
+    mimeType: "application/pdf",
+    data: await fileToBase64(file),
+    name: file.name
+  })));
+}

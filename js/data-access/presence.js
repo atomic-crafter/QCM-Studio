@@ -14,6 +14,9 @@ import {
   query,
   where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getLang } from "../core/i18n.js";
+
+const SORT_LOCALES = { fr: "fr-FR", en: "en-US", zh: "zh-CN" };
 
 let db;
 let pseudo;
@@ -83,7 +86,7 @@ export async function goOnline(status = "online") {
     });
     users.sort((left, right) => {
       if (left.status !== right.status) return left.status === "playing" ? -1 : 1;
-      return String(left.pseudo || "").localeCompare(String(right.pseudo || ""), "fr-FR");
+      return String(left.pseudo || "").localeCompare(String(right.pseudo || ""), SORT_LOCALES[getLang()] || "fr-FR");
     });
     if (onUsersChange) onUsersChange(users);
   }, (err) => {

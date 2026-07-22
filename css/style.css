@@ -44,6 +44,38 @@ body::before {
 .screen { display: none; position: relative; z-index: 1; }
 .screen.active { display: flex; }
 
+/* ══════════════════════════════════════════
+   LANGUAGE SWITCHER (interface UI only, not AI content language)
+══════════════════════════════════════════ */
+.lang-switcher {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  gap: .3rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .25rem;
+}
+.lang-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'Space Mono', monospace;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: .3rem .55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.lang-switch-btn.active {
+  background: rgba(124,58,237,.18);
+  color: var(--accent);
+}
+
 .login-credit {
   position: fixed;
   bottom: 18px;

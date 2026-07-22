@@ -7,6 +7,7 @@
 
 import { buildExplainAnswerPrompt } from "./qcmPromptBuilder.js";
 import { callWithAutoFallback } from "./aiKeyOrchestrator.js";
+import { t } from "../core/i18n.js";
 
 function proxyBase() {
   return (window.__GIPHY_PROXY_URL || localStorage.getItem("qcm_giphy_proxy_url") || "").replace(/\/$/, "");
@@ -39,7 +40,7 @@ export async function requestAiWrongAnswerExplanation({
   // 3) Repli : clé Gemini partagée par l'admin via le Worker (gated admin/allowlist).
   const base = proxyBase();
   if (!base) {
-    throw new Error("URL du proxy non configurée (window.__GIPHY_PROXY_URL)");
+    throw new Error(t("qcmCreator.proxyNotConfigured"));
   }
 
   const token = localStorage.getItem("qcm_auth_token") || "";
@@ -63,15 +64,15 @@ export async function requestAiWrongAnswerExplanation({
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 429) {
-      throw new Error("Quota IA atteint (429). Réessaie dans quelques minutes.");
+      throw new Error(t("aiCoach.quotaError"));
     }
     if (res.status === 403) {
-      throw new Error(data.error || "Accès IA restreint — demande à l'admin de t'ajouter à la liste autorisée, ou ajoute/partage une clé API dans 🔑 Mes clés IA.");
+      throw new Error(data.error || t("aiCoach.accessRestricted"));
     }
-    throw new Error(data.error || `Erreur ${res.status}`);
+    throw new Error(data.error || t("qcmCreator.httpError", { status: res.status }));
   }
 
   const explanation = String(data.explanation || "").trim();
-  if (!explanation) throw new Error("Réponse IA vide");
+  if (!explanation) throw new Error(t("aiCoach.emptyResponse"));
   return explanation;
 }

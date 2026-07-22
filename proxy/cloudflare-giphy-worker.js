@@ -27,6 +27,19 @@ const GEMINI_MODELS = [
   'gemini-1.5-flash',
 ];
 
+// Même liste que js/ai/qcmPromptBuilder.js (LANGUAGE_NAMES) — dupliquée ici car
+// ce Worker est un fichier isolé, sans accès aux modules ES du site.
+const QCM_LANGUAGE_NAMES = {
+  fr: 'français',
+  en: 'anglais',
+  es: 'espagnol',
+  de: 'allemand',
+  it: 'italien',
+  zh: 'chinois (mandarin simplifié)',
+  pt: 'portugais',
+  nl: 'néerlandais'
+};
+
 export default {
   async fetch(request, env) {
     FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID || FIREBASE_PROJECT_ID;
@@ -129,12 +142,15 @@ async function handleGemini(request, env) {
 
   const prompt = String(body.prompt || '').trim().slice(0, 500);
   const count  = Math.min(20, Math.max(3, parseInt(body.count) || 10));
+  const requestedLanguage = String(body.language || 'fr').toLowerCase();
+  const languageName = QCM_LANGUAGE_NAMES[requestedLanguage] || QCM_LANGUAGE_NAMES.fr;
 
   if (prompt.length < 3) return json({ error: 'Prompt trop court (min 3 caractères)' }, 400);
 
   const systemPrompt =
     `Tu es un expert en création de QCM pédagogiques. Génère exactement ${count} questions de QCM sur le sujet suivant : "${prompt}".\n\n` +
     `CONTRAINTES STRICTES :\n` +
+    `- Écris INTÉGRALEMENT en ${languageName} : les questions, les options de réponse, les catégories et les explications. N'utilise aucune autre langue, sauf pour les termes techniques qui n'ont pas de traduction standard.\n` +
     `- Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte avant ou après, sans balises markdown\n` +
     `- Si le sujet contient des maths/physique/quantique, utilise du LaTeX standard dans q/opts/exp avec des délimiteurs $...$ (ou $$...$$)\n` +
     `- Dans le JSON, échappe les antislashs LaTeX correctement (ex: \\\\alpha, \\\\frac{1}{2}, |0\\\\rangle, \\\\langle\\\\psi|)\n` +
@@ -286,8 +302,16 @@ async function handleGeminiAdvanced(request, env) {
 
   const systemPrompt = String(body.systemPrompt || '').trim().slice(0, 400000);
   const maxOutputTokens = Math.min(8192, Math.max(512, parseInt(body.maxOutputTokens) || 4096));
+  const pdfParts = sanitizePdfParts(body.pdfParts);
 
   if (systemPrompt.length < 20) return json({ error: 'Prompt système trop court' }, 400);
+
+  // Les PDF joints passent en inline_data AVANT le texte : Gemini les lit
+  // nativement (voir js/ai/qcmFromPdf.js — option "envoyer le PDF directement").
+  const parts = [
+    ...pdfParts.map(p => ({ inline_data: { mime_type: p.mimeType, data: p.data } })),
+    { text: systemPrompt }
+  ];
 
   let lastStatus = 0;
 
@@ -300,7 +324,7 @@ async function handleGeminiAdvanced(request, env) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: systemPrompt }] }],
+              contents: [{ parts }],
               generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens,
@@ -753,15 +777,19 @@ async function decryptSharedKey(ciphertextB64, env) {
   return new TextDecoder().decode(plainBuf);
 }
 
-async function callGeminiServerSide(systemPrompt, maxTokens, apiKey, jsonMode, model) {
+async function callGeminiServerSide(systemPrompt, maxTokens, apiKey, jsonMode, model, pdfParts) {
   const m = model || 'gemini-2.5-flash';
+  const parts = [
+    ...(pdfParts || []).map(p => ({ inline_data: { mime_type: p.mimeType, data: p.data } })),
+    { text: systemPrompt }
+  ];
   const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: systemPrompt }] }],
+        contents: [{ parts }],
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: maxTokens,
@@ -778,8 +806,17 @@ async function callGeminiServerSide(systemPrompt, maxTokens, apiKey, jsonMode, m
   return text;
 }
 
-async function callClaudeServerSide(systemPrompt, maxTokens, apiKey, model) {
+async function callClaudeServerSide(systemPrompt, maxTokens, apiKey, model, pdfParts) {
   const m = model || 'claude-opus-4-8';
+  const content = pdfParts?.length
+    ? [
+        ...pdfParts.map(p => ({
+          type: 'document',
+          source: { type: 'base64', media_type: p.mimeType, data: p.data }
+        })),
+        { type: 'text', text: systemPrompt }
+      ]
+    : systemPrompt;
   const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -787,7 +824,7 @@ async function callClaudeServerSide(systemPrompt, maxTokens, apiKey, model) {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify({ model: m, max_tokens: maxTokens, messages: [{ role: 'user', content: systemPrompt }] })
+    body: JSON.stringify({ model: m, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
   }, 20000);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error?.message || `Erreur Claude ${res.status}`);
@@ -819,9 +856,9 @@ async function callOpenAiCompatibleServerSide(systemPrompt, maxTokens, apiKey, b
   return text;
 }
 
-async function callProviderServerSide(provider, systemPrompt, maxTokens, apiKey, jsonMode, model) {
-  if (provider === 'gemini') return callGeminiServerSide(systemPrompt, maxTokens, apiKey, jsonMode, model);
-  if (provider === 'claude') return callClaudeServerSide(systemPrompt, maxTokens, apiKey, model);
+async function callProviderServerSide(provider, systemPrompt, maxTokens, apiKey, jsonMode, model, pdfParts) {
+  if (provider === 'gemini') return callGeminiServerSide(systemPrompt, maxTokens, apiKey, jsonMode, model, pdfParts);
+  if (provider === 'claude') return callClaudeServerSide(systemPrompt, maxTokens, apiKey, model, pdfParts);
   if (provider === 'deepseek') return callOpenAiCompatibleServerSide(systemPrompt, maxTokens, apiKey, 'https://api.deepseek.com', 'deepseek-chat', jsonMode, model);
   if (provider === 'openai') return callOpenAiCompatibleServerSide(systemPrompt, maxTokens, apiKey, 'https://api.openai.com/v1', 'gpt-4o-mini', jsonMode, model);
   throw new Error('Fournisseur inconnu: ' + provider);
@@ -846,6 +883,10 @@ async function handleUseSharedKey(request, env) {
   const systemPrompt = String(body.systemPrompt || '');
   const maxTokens = Math.min(12000, Math.max(256, Number(body.maxTokens) || 4096));
   const jsonMode = body.jsonMode !== false;
+  // PDF joints natifs : n'a de sens que pour gemini/claude (lecture native de
+  // documents) — ignoré silencieusement pour les autres fournisseurs, voir
+  // callProviderServerSide/callOpenAiCompatibleServerSide.
+  const pdfParts = (provider === 'gemini' || provider === 'claude') ? sanitizePdfParts(body.pdfParts) : [];
 
   if (!ownerUid || !provider || !systemPrompt) {
     return json({ error: 'Requête invalide (ownerUid/provider/systemPrompt manquant).' }, 400);
@@ -875,7 +916,7 @@ async function handleUseSharedKey(request, env) {
   }
 
   try {
-    const text = await callProviderServerSide(provider, systemPrompt, maxTokens, apiKey, jsonMode, model);
+    const text = await callProviderServerSide(provider, systemPrompt, maxTokens, apiKey, jsonMode, model, pdfParts);
     return json({ text });
   } catch (e) {
     return json({ error: e?.message || 'Erreur du fournisseur IA' }, 502);
@@ -883,6 +924,23 @@ async function handleUseSharedKey(request, env) {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
+
+// Valide/borne les PDF joints envoyés par le client pour le mode "lecture native"
+// (voir js/ai/qcmFromPdf.js) — limite le nombre de fichiers et la taille de
+// chacun (base64) pour éviter qu'une requête abuse du Worker ou de l'API amont.
+function sanitizePdfParts(raw) {
+  if (!Array.isArray(raw)) return [];
+  const MAX_PARTS = 5;
+  const MAX_PART_BASE64_CHARS = 15 * 1024 * 1024; // ~15M chars base64 (~11MB de PDF)
+  return raw
+    .filter(p => p && typeof p.data === 'string' && p.data.length > 0 && p.data.length <= MAX_PART_BASE64_CHARS)
+    .slice(0, MAX_PARTS)
+    .map(p => ({
+      mimeType: typeof p.mimeType === 'string' && p.mimeType ? p.mimeType : 'application/pdf',
+      data: p.data
+    }));
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',

@@ -27,23 +27,17 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getApiKey } from "./apiKeyVault.js";
+import { t } from "../core/i18n.js";
 
 // Clé PUBLIQUE uniquement — safe à distribuer (elle ne permet QUE de chiffrer,
 // jamais de déchiffrer). La clé privée correspondante vit uniquement dans le
 // secret Cloudflare SHARED_KEY_VAULT_PRIVATE_KEY, jamais dans ce dépôt.
-//
-// CETTE CLÉ EST UN PLACEHOLDER — génère la tienne avec
-// `node scripts/generate-shared-key-pair.mjs`, colle la partie publique ici
-// et stocke la partie privée comme secret Worker (voir le README). Tant que
-// tu n'as pas fait ça, la fonctionnalité de partage de clé entre
-// utilisateurs ne fonctionnera pas (le Worker n'aura pas la clé privée
-// correspondante).
 const SHARING_PUBLIC_KEY_JWK = {
   key_ops: ["encrypt"],
   ext: true,
   alg: "RSA-OAEP-256",
   kty: "RSA",
-  n: "REPLACE_WITH_YOUR_OWN_PUBLIC_KEY_N_VALUE",
+  n: "6gWjULo6Ang-MJWx2VDQ_fd2Ah_j7vXGWBHXTF4P2Fa9nXlXpi5MlNS2m3tUfB6FmnqLZoQTdYcEti7GiikPXqDffv1ifKjlNApNjIUF-B4boDsoEatVOrT4V0nQIXjUzEqNj-sOskOmYSlJV_-6qQR_i11Pf5sStQ1vbLBpces6R77D3DA13Z92a4UhzPtFDby5uxNsH21Knnqy75DhG0Nhh7lRBY22qJwwkwjCSZNYepCk8U1VEasSRueN8ALqsEhUzNGtsw9DunVYo38Aa6TW7slg3iObQ6OTEeyW4sSbibWIv-5nqPP_M2YPXI4eow2AnLrbRGi9ryGzTgBZCw",
   e: "AQAB"
 };
 
@@ -81,8 +75,8 @@ function sameUsername(a, b) {
  */
 export async function shareApiKeyWithUser(uid, username, provider, targetUsername) {
   const target = String(targetUsername || "").trim();
-  if (!target) throw new Error("Indique le pseudo exact de la personne à qui partager");
-  if (sameUsername(target, username)) throw new Error("Tu ne peux pas te partager une clé à toi-même");
+  if (!target) throw new Error(t("sharedKeyVault.needExactUsername"));
+  if (sameUsername(target, username)) throw new Error(t("sharedKeyVault.cannotShareWithSelf"));
 
   const ref = doc(db, "sharedApiKeys", uid);
   const snap = await getDoc(ref);
@@ -91,7 +85,7 @@ export async function shareApiKeyWithUser(uid, username, provider, targetUsernam
   let ciphertext = existing?.ciphertext;
   if (!ciphertext) {
     const plaintext = await getApiKey(uid, provider);
-    if (!plaintext) throw new Error("Aucune clé enregistrée pour ce fournisseur");
+    if (!plaintext) throw new Error(t("sharedKeyVault.noKeyForProvider"));
     const publicKey = await getPublicKey();
     const enc = new TextEncoder();
     const buf = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, enc.encode(plaintext));
@@ -135,7 +129,7 @@ export async function shareApiKeyWithAll(uid, username, provider) {
   let ciphertext = existing?.ciphertext;
   if (!ciphertext) {
     const plaintext = await getApiKey(uid, provider);
-    if (!plaintext) throw new Error("Aucune clé enregistrée pour ce fournisseur");
+    if (!plaintext) throw new Error(t("sharedKeyVault.noKeyForProvider"));
     const publicKey = await getPublicKey();
     const enc = new TextEncoder();
     const buf = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, enc.encode(plaintext));

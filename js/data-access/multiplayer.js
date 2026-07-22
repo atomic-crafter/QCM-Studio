@@ -16,6 +16,7 @@ import { requestAiWrongAnswerExplanation } from "../ai/aiCoach.js";
 import { canUseAi } from "../auth/aiAccess.js";
 import { hasAnyOwnOrSharedKey } from "../ai/aiKeyOrchestrator.js";
 import { renderLatexHtml } from "../core/latex.js";
+import { t } from "../core/i18n.js";
 
 let db;
 let challengeId;
@@ -143,7 +144,7 @@ function renderMultiQuestion() {
 
   const q = questions[currentIndex];
 
-  document.getElementById("quiz-subject-label").textContent = `⚔️ vs ${opponentPseudo}`;
+  document.getElementById("quiz-subject-label").textContent = t("duel.vsLabel", { opponent: opponentPseudo });
   document.getElementById("q-num").textContent              = currentIndex + 1;
   document.getElementById("q-total").textContent            = questions.length;
   document.getElementById("q-category").textContent         = q.cat || "";
@@ -154,8 +155,8 @@ function renderMultiQuestion() {
   nextBtn.classList.remove("show");
   nextBtn.disabled = false;
   nextBtn.dataset.pending = "0";
-  nextBtn.textContent = "Suivant →";
-  document.getElementById("streak-badge").textContent       = myStreak >= 3 ? `🔥 ${myStreak}` : "";
+  nextBtn.textContent = t("quiz.nextBtn");
+  document.getElementById("streak-badge").textContent       = myStreak >= 3 ? t("room.streakBadgeShort", { count: myStreak }) : "";
 
   const pct = (currentIndex / questions.length) * 100;
   document.getElementById("progress-bar").style.width = pct + "%";
@@ -169,12 +170,12 @@ function renderMultiQuestion() {
   scoreboard.id = "duel-live-scoreboard";
   scoreboard.innerHTML = `
     <div class="duel-live-row me">
-      <span class="duel-live-name">${myPseudo} (toi)</span>
-      <span class="duel-live-stats" id="duel-live-me">0 pts · 0/${questions.length}</span>
+      <span class="duel-live-name">${myPseudo}${t("duel.youSuffix")}</span>
+      <span class="duel-live-stats" id="duel-live-me">${t("duel.scoreboardLine", { pts: 0, correct: 0, total: questions.length })}</span>
     </div>
     <div class="duel-live-row">
       <span class="duel-live-name">${opponentPseudo}</span>
-      <span class="duel-live-stats" id="duel-live-opp">0 pts · 0/${questions.length}</span>
+      <span class="duel-live-stats" id="duel-live-opp">${t("duel.scoreboardLine", { pts: 0, correct: 0, total: questions.length })}</span>
     </div>
   `;
 
@@ -184,7 +185,7 @@ function renderMultiQuestion() {
   opponentStatus.id = "opponent-status";
   opponentStatus.innerHTML = `
     <span class="opp-avatar">${opponentPseudo[0].toUpperCase()}</span>
-    <span id="opp-status-text">${opponentPseudo} réfléchit...</span>
+    <span id="opp-status-text">${t("duel.opponentThinking", { opponent: opponentPseudo })}</span>
   `;
 
   optsEl.before(scoreboard);
@@ -226,13 +227,13 @@ function onOpponentUpdate() {
   if (answered && oppAnswer !== null && oppAnswer !== undefined) {
     const q       = questions[currentIndex];
     const correct = oppAnswer === q.ans;
-    statusEl.textContent = `${opponentPseudo} a répondu ${correct ? "✅" : "❌"}`;
+    statusEl.textContent = t("duel.opponentAnsweredResult", { opponent: opponentPseudo, icon: correct ? "✅" : "❌" });
     statusEl.style.color = correct ? "var(--success)" : "var(--danger)";
     markOpponentAnswer(oppAnswer);
   } else if (!answered) {
     // L'adversaire a répondu mais pas moi encore
     if (oppAnswer !== null && oppAnswer !== undefined) {
-      statusEl.textContent = `${opponentPseudo} a répondu ⏳`;
+      statusEl.textContent = t("duel.opponentAnsweredPending", { opponent: opponentPseudo });
       statusEl.style.color = "var(--accent3)";
     }
   }
@@ -244,7 +245,7 @@ function onOpponentUpdate() {
     nextBtn.disabled = false;
     nextBtn.dataset.pending = "0";
     nextBtn.textContent =
-      currentIndex < questions.length - 1 ? "Suivant →" : "Voir les résultats →";
+      currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
   }
 
   // Les deux ont cliqué Suivant → passe à la question suivante
@@ -299,7 +300,7 @@ async function revealAnswer(selected) {
 
   if (q.exp) {
     const expEl = document.getElementById("explanation");
-    expEl.innerHTML = `<strong>💡 Explication :</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
+    expEl.innerHTML = `<strong>${t("quiz.explanationLabel")}</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
     expEl.classList.add("show");
   }
 
@@ -308,14 +309,14 @@ async function revealAnswer(selected) {
     myStreak++;
     myMaxStreak = Math.max(myMaxStreak, myStreak);
     myScore += DEFAULT_SCORING.baseCorrectPoints + computeStreakBonus(myStreak);
-    if (myStreak >= 3) toast(`🔥 Série de ${myStreak} !`);
+    if (myStreak >= 3) toast(t("quiz.streakToast", { count: myStreak }));
   } else {
     myStreak = 0;
-    if (selected === -1) toast("⏱ Temps écoulé !");
+    if (selected === -1) toast(t("quiz.timeUpToast"));
     renderAskAiInChatAction(q, selected);
   }
 
-  document.getElementById("streak-badge").textContent = myStreak >= 3 ? `🔥 ${myStreak}` : "";
+  document.getElementById("streak-badge").textContent = myStreak >= 3 ? t("room.streakBadgeShort", { count: myStreak }) : "";
   updateDuelLiveScoreboard();
 
   // Maintenant que j'ai répondu, affiche la réponse adversaire si elle est déjà là
@@ -324,7 +325,7 @@ async function revealAnswer(selected) {
     const correct = oppAnswer === q.ans;
     const statusEl = document.getElementById("opp-status-text");
     if (statusEl) {
-      statusEl.textContent = `${opponentPseudo} a répondu ${correct ? "✅" : "❌"}`;
+      statusEl.textContent = t("duel.opponentAnsweredResult", { opponent: opponentPseudo, icon: correct ? "✅" : "❌" });
       statusEl.style.color = correct ? "var(--success)" : "var(--danger)";
     }
     markOpponentAnswer(oppAnswer);
@@ -334,12 +335,12 @@ async function revealAnswer(selected) {
     nextBtn.disabled = false;
     nextBtn.dataset.pending = "0";
     nextBtn.textContent =
-      currentIndex < questions.length - 1 ? "Suivant →" : "Voir les résultats →";
+      currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
   } else {
     // J'attends l'adversaire
     const statusEl = document.getElementById("opp-status-text");
     if (statusEl) {
-      statusEl.textContent = `En attente de ${opponentPseudo}...`;
+      statusEl.textContent = t("duel.waitingForOpponent", { opponent: opponentPseudo });
       statusEl.style.color = "var(--text-dim)";
     }
   }
@@ -416,8 +417,8 @@ function updateDuelLiveScoreboard() {
   if (!meEl || !oppEl) return;
 
   const { mePoints, oppPoints, meCorrect, oppCorrect } = computeDuelLiveScores();
-  meEl.textContent = `${mePoints} pts · ${meCorrect}/${questions.length}`;
-  oppEl.textContent = `${oppPoints} pts · ${oppCorrect}/${questions.length}`;
+  meEl.textContent = t("duel.scoreboardLine", { pts: mePoints, correct: meCorrect, total: questions.length });
+  oppEl.textContent = t("duel.scoreboardLine", { pts: oppPoints, correct: oppCorrect, total: questions.length });
 }
 
 function renderAskAiInChatAction(q, selected) {
@@ -435,20 +436,20 @@ function renderAskAiInChatAction(q, selected) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn secondary";
-  btn.textContent = "🤖 Demander à l'IA (chat)";
+  btn.textContent = t("room.askAiChatBtn");
 
   btn.onclick = async () => {
     if (btn.dataset.loading === "1") return;
 
     const allowed = (await canUseAi(state.user, state.isGuest)) || (await hasAnyOwnOrSharedKey(state.uid, state.user, state.isGuest));
     if (!allowed) {
-      toast("🔒 Accès IA restreint — demande à l'admin de t'ajouter à la liste autorisée, ou ajoute ta propre clé API dans 🔑 Mes clés IA.");
+      toast(t("quiz.aiAccessRestricted"));
       return;
     }
 
     btn.dataset.loading = "1";
     btn.disabled = true;
-    btn.textContent = "⏳ IA en cours...";
+    btn.textContent = t("quiz.aiLoading");
 
     try {
       const explanation = await requestAiWrongAnswerExplanation({
@@ -462,14 +463,14 @@ function renderAskAiInChatAction(q, selected) {
         username: state.user
       });
 
-      await postAiCoachMessage(`Q${currentIndex + 1} — ${explanation}`, { latexEnabled: isLatexEnabled() });
-      toast("🤖 Explication envoyée dans le chat");
+      await postAiCoachMessage(t("room.aiCoachChatPrefix", { num: currentIndex + 1, explanation }), { latexEnabled: isLatexEnabled() });
+      toast(t("room.aiExplanationSentToast"));
     } catch (e) {
-      toast(`❌ IA: ${e?.message || "erreur"}`);
+      toast(t("quiz.aiErrorToast", { msg: e?.message || t("common.genericError") }));
     } finally {
       btn.dataset.loading = "0";
       btn.disabled = false;
-      btn.textContent = "🤖 Demander à l'IA (chat)";
+      btn.textContent = t("room.askAiChatBtn");
     }
   };
 
@@ -481,7 +482,7 @@ function renderAskAiInChatAction(q, selected) {
 export async function nextMultiQuestion() {
   const nextBtn = document.getElementById("btn-next");
   if (!nextBtn || !challengeId || !myPseudo) {
-    toast("❌ Duel invalide, retourne au menu puis relance un défi");
+    toast(t("duel.invalidDuelToast"));
     return;
   }
 
@@ -489,7 +490,7 @@ export async function nextMultiQuestion() {
 
   nextBtn.dataset.pending = "1";
   nextBtn.disabled = true;
-  nextBtn.textContent = `En attente de ${opponentPseudo}...`;
+  nextBtn.textContent = t("duel.waitingForOpponent", { opponent: opponentPseudo });
 
   try {
     // Marque que je suis prêt pour la prochaine question
@@ -505,7 +506,7 @@ export async function nextMultiQuestion() {
     nextBtn.classList.remove("show");
     const statusEl = document.getElementById("opp-status-text");
     if (statusEl) {
-      statusEl.textContent = `En attente de ${opponentPseudo}...`;
+      statusEl.textContent = t("duel.waitingForOpponent", { opponent: opponentPseudo });
       statusEl.style.color = "var(--text-dim)";
     }
 
@@ -515,10 +516,10 @@ export async function nextMultiQuestion() {
     }
   } catch (e) {
     console.error("nextMultiQuestion failed:", e);
-    toast(`❌ Impossible de valider cette manche (${e?.code || e?.message || 'erreur'})`);
+    toast(t("room.cannotValidateToast", { code: e?.code || e?.message || t("home.unknownError") }));
     nextBtn.dataset.pending = "0";
     nextBtn.disabled = false;
-    nextBtn.textContent = currentIndex < questions.length - 1 ? "Suivant →" : "Voir les résultats →";
+    nextBtn.textContent = currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
   }
 }
 
@@ -629,9 +630,10 @@ async function showMultiResults() {
   document.getElementById("res-correct").textContent = myCorrect;
   document.getElementById("res-wrong").textContent   = total - myCorrect;
   document.getElementById("res-streak").textContent  = myBestStreak;
-  document.getElementById("res-title").textContent   = won ? "🏆 Victoire !" : tie ? "🤝 Égalité !" : "😤 Défaite !";
-  document.getElementById("res-msg").textContent     =
-    `${myPseudo} ${myPoints} pts (${myCorrect}/${total}) · ${opponentPseudo} ${oppPoints} pts (${oppCorrect}/${total})`;
+  document.getElementById("res-title").textContent   = won ? t("duel.won") : tie ? t("duel.tie") : t("duel.lost");
+  document.getElementById("res-msg").textContent     = t("duel.resultSummary", {
+    me: myPseudo, myPts: myPoints, myCorrect, opp: opponentPseudo, oppPts: oppPoints, oppCorrect, total
+  });
 
   myScore = myPoints;
   myMaxStreak = myBestStreak;

@@ -8,6 +8,7 @@ import { canUseAi } from "../auth/aiAccess.js";
 import { hasAnyOwnOrSharedKey } from "../ai/aiKeyOrchestrator.js";
 import { renderLatexHtml } from "../core/latex.js";
 import { areAnswersEqual, getCorrectAnswerIndices, isMultiAnswerQuestion, normalizeSelectedAnswer } from "../core/questionUtils.js";
+import { t } from "../core/i18n.js";
 
 // ── ÉTAT LOCAL DU QUIZ ────────────────────────────────────────────────────────
 let questions    = [];
@@ -55,7 +56,7 @@ export function startQuiz(subjectObj, count, timed = false, filter = null) {
   stopQuiz();
   if (!subjectObj || !Array.isArray(subjectObj.questions)) {
     console.warn("startQuiz invalid subject:", { subjectObj, count, timed, filter });
-    toast("❌ Quiz invalide");
+    toast(t("quiz.invalidQuiz"));
     return false;
   }
 
@@ -81,7 +82,7 @@ export function startQuiz(subjectObj, count, timed = false, filter = null) {
       filter,
       availableQuestions: subjectObj.questions.length
     });
-    toast("❌ Aucun quiz disponible pour cette sélection");
+    toast(t("quiz.noQuizAvailable"));
     questions = [];
     currentIndex = 0;
     score = 0;
@@ -129,7 +130,7 @@ function renderQuestion() {
   document.getElementById("explanation").classList.remove("show");
   document.getElementById("explanation").innerHTML = "";
   document.getElementById("btn-next").classList.remove("show");
-  document.getElementById("streak-badge").textContent = streak >= 3 ? `🔥 Série : ${streak}` : "";
+  document.getElementById("streak-badge").textContent = streak >= 3 ? t("quiz.streakBadge", { count: streak }) : "";
 
   const pct = (currentIndex / questions.length) * 100;
   document.getElementById("progress-bar").style.width = pct + "%";
@@ -188,20 +189,20 @@ function updateActionButton() {
   if (!answered && multi) {
     nextBtn.classList.add("show");
     nextBtn.disabled = currentSelection.length === 0;
-    nextBtn.textContent = "Valider →";
+    nextBtn.textContent = t("quiz.validateBtn");
     return;
   }
 
   if (!answered) {
     nextBtn.classList.remove("show");
     nextBtn.disabled = false;
-    nextBtn.textContent = currentIndex < questions.length - 1 ? "Suivant →" : "Voir les résultats →";
+    nextBtn.textContent = currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
     return;
   }
 
   nextBtn.classList.add("show");
   nextBtn.disabled = false;
-  nextBtn.textContent = currentIndex < questions.length - 1 ? "Suivant →" : "Voir les résultats →";
+  nextBtn.textContent = currentIndex < questions.length - 1 ? t("quiz.nextBtn") : t("quiz.seeResultsBtn");
 }
 
 // ── ANSWER LOGIC ─────────────────────────────────────────────────────────────
@@ -257,7 +258,7 @@ function revealAnswer(selected) {
   // Explication
   const expEl = document.getElementById("explanation");
   if (q.exp) {
-    expEl.innerHTML = `<strong>💡 Explication :</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
+    expEl.innerHTML = `<strong>${t("quiz.explanationLabel")}</strong> ${renderLatexHtml(q.exp, { latexEnabled: isLatexEnabled() })}`;
     expEl.classList.add("show");
   }
 
@@ -266,20 +267,20 @@ function revealAnswer(selected) {
     score++;
     streak++;
     maxStreak = Math.max(maxStreak, streak);
-    if (streak >= 3) toast(`🔥 Série de ${streak} !`);
+    if (streak >= 3) toast(t("quiz.streakToast", { count: streak }));
   } else {
     streak = 0;
-    if (selected === -1 || (Array.isArray(selected) && selected.length === 0)) toast("⏱ Temps écoulé !");
+    if (selected === -1 || (Array.isArray(selected) && selected.length === 0)) toast(t("quiz.timeUpToast"));
     renderAskAiAction(q, selected);
   }
 
-  document.getElementById("streak-badge").textContent = streak >= 3 ? `🔥 Série : ${streak}` : "";
+  document.getElementById("streak-badge").textContent = streak >= 3 ? t("quiz.streakBadge", { count: streak }) : "";
 
   const nextBtn = document.getElementById("btn-next");
   nextBtn.classList.add("show");
   nextBtn.textContent = currentIndex < questions.length - 1
-    ? "Suivant →"
-    : "Voir les résultats →";
+    ? t("quiz.nextBtn")
+    : t("quiz.seeResultsBtn");
 
   updateActionButton();
 }
@@ -293,7 +294,7 @@ function renderAskAiAction(q, selected) {
     note.style.marginTop = "0.8rem";
     note.className = "btn secondary";
     note.style.display = "inline-flex";
-    note.textContent = "🤖 IA indisponible pour les réponses multiples";
+    note.textContent = t("quiz.aiUnavailableMulti");
     expEl.appendChild(note);
     expEl.classList.add("show");
     return;
@@ -305,7 +306,7 @@ function renderAskAiAction(q, selected) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn secondary";
-  btn.textContent = "🤖 Demander à l'IA pourquoi";
+  btn.textContent = t("quiz.askAiBtn");
 
   const controls = document.createElement("div");
   controls.style.display = "flex";
@@ -314,7 +315,7 @@ function renderAskAiAction(q, selected) {
   controls.style.marginBottom = "0.5rem";
 
   const langLabel = document.createElement("label");
-  langLabel.textContent = "Langue :";
+  langLabel.textContent = t("quiz.aiCoachLanguageLabel");
   langLabel.style.fontSize = "0.9rem";
 
   const langSelect = document.createElement("select");
@@ -356,13 +357,13 @@ function renderAskAiAction(q, selected) {
 
     const allowed = (await canUseAi(state.user, state.isGuest)) || (await hasAnyOwnOrSharedKey(state.uid, state.user, state.isGuest));
     if (!allowed) {
-      toast("🔒 Accès IA restreint — demande à l'admin de t'ajouter à la liste autorisée, ou ajoute ta propre clé API dans 🔑 Mes clés IA.");
+      toast(t("quiz.aiAccessRestricted"));
       return;
     }
 
     btn.dataset.loading = "1";
     btn.disabled = true;
-    btn.textContent = "⏳ IA en cours...";
+    btn.textContent = t("quiz.aiLoading");
     aiAnswer.textContent = "";
 
     try {
@@ -376,14 +377,14 @@ function renderAskAiAction(q, selected) {
         uid: state.uid,
         username: state.user
       });
-      aiAnswer.innerHTML = renderLatexHtml(`🤖 Coach IA : ${explanation}`, { latexEnabled: isLatexEnabled() });
+      aiAnswer.innerHTML = renderLatexHtml(t("quiz.aiCoachPrefix", { explanation }), { latexEnabled: isLatexEnabled() });
     } catch (e) {
       aiAnswer.textContent = "";
-      toast(`❌ IA: ${e?.message || "erreur"}`);
+      toast(t("quiz.aiErrorToast", { msg: e?.message || t("common.genericError") }));
     } finally {
       btn.dataset.loading = "0";
       btn.disabled = false;
-      btn.textContent = "🤖 Demander à l'IA pourquoi";
+      btn.textContent = t("quiz.askAiBtn");
     }
   };
 
@@ -399,7 +400,7 @@ export function nextQuestion() {
   const q = questions[currentIndex];
   if (q && !answered && isMultiAnswerQuestion(q)) {
     if (!currentSelection.length) {
-      toast("Sélectionne au moins une réponse");
+      toast(t("quiz.selectAtLeastOne"));
       return;
     }
     revealAnswer([...currentSelection]);
@@ -427,10 +428,10 @@ async function showResults() {
   document.getElementById("res-streak").textContent  = maxStreak;
 
   const levels = [
-    [90, "🏆 Excellent !",        "Tu maîtrises ce sujet. Prêt pour l'examen."],
-    [70, "👍 Bien joué !",        "Quelques points à revoir et tu seras au top."],
-    [50, "📚 Peut mieux faire",   "Revois les thèmes ratés avant l'examen."],
-    [0,  "💪 Courage !",          "Recommence, chaque essai compte."],
+    [90, t("quiz.level90Title"), t("quiz.level90Msg")],
+    [70, t("quiz.level70Title"), t("quiz.level70Msg")],
+    [50, t("quiz.level50Title"), t("quiz.level50Msg")],
+    [0,  t("quiz.level0Title"),  t("quiz.level0Msg")],
   ];
   const [, title, msg] = levels.find(([min]) => pct >= min) || levels[levels.length - 1];
   document.getElementById("res-title").textContent = title;
@@ -468,7 +469,7 @@ function renderAnswerRecap() {
     });
 
   if (!rows.length) {
-    recapEl.innerHTML = "<div class='result-review-empty'>// Aucune réponse à afficher</div>";
+    recapEl.innerHTML = `<div class='result-review-empty'>${t("quiz.noAnswersToShow")}</div>`;
     return;
   }
 
@@ -481,22 +482,22 @@ function renderAnswerRecap() {
       : (entry.correctIndex === -1 ? [] : [entry.correctIndex]);
 
     const selectedText = selectedIndices.length === 0
-      ? "⏱ Temps écoulé"
-      : selectedIndices.map(index => `${String.fromCharCode(65 + index)}. ${entry.options?.[index] ?? "Option indisponible"}`).join(" · ");
+      ? t("quiz.timeUpShort")
+      : selectedIndices.map(index => `${String.fromCharCode(65 + index)}. ${entry.options?.[index] ?? t("quiz.optionUnavailable")}`).join(" · ");
     const correctText = correctIndices.length === 0
-      ? "Réponse correcte indisponible"
-      : correctIndices.map(index => `${String.fromCharCode(65 + index)}. ${entry.options?.[index] ?? "Option indisponible"}`).join(" · ");
+      ? t("quiz.correctAnswerUnavailable")
+      : correctIndices.map(index => `${String.fromCharCode(65 + index)}. ${entry.options?.[index] ?? t("quiz.optionUnavailable")}`).join(" · ");
 
     return `
       <article class="result-review-row ${entry.isCorrect ? "correct" : "wrong"}">
         <div class="result-review-head">
           <span class="result-review-badge">Q${entry.questionNumber}</span>
-          <span class="result-review-state">${entry.isCorrect ? "✅ Bonne réponse" : "❌ Mauvaise réponse"}</span>
+          <span class="result-review-state">${entry.isCorrect ? t("quiz.correctAnswerLabel") : t("quiz.wrongAnswerLabel")}</span>
         </div>
         ${entry.category ? `<div class="result-review-category">${entry.category}</div>` : ""}
         <div class="result-review-question">${renderLatexHtml(entry.question, { latexEnabled: isLatexEnabled() })}</div>
-        <div class="result-review-line"><strong>Ta réponse :</strong> ${renderLatexHtml(selectedText, { latexEnabled: isLatexEnabled() })}</div>
-        <div class="result-review-line"><strong>Bonne réponse :</strong> ${renderLatexHtml(correctText, { latexEnabled: isLatexEnabled() })}</div>
+        <div class="result-review-line"><strong>${t("quiz.yourAnswerLabel")}</strong> ${renderLatexHtml(selectedText, { latexEnabled: isLatexEnabled() })}</div>
+        <div class="result-review-line"><strong>${t("quiz.correctAnswerLabelColon")}</strong> ${renderLatexHtml(correctText, { latexEnabled: isLatexEnabled() })}</div>
       </article>
     `;
   }).join("");

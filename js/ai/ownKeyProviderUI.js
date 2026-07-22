@@ -11,6 +11,7 @@
 
 import { toast } from "../core/runtime.js";
 import { isVaultUnlocked, unlockVault, getApiKey } from "./apiKeyVault.js";
+import { t } from "../core/i18n.js";
 
 export const OWN_KEY_PROVIDERS = [
   { vaultKey: "claude", dispatch: "claude", settingsKey: "claude", label: "Claude (ma clé)", icon: "🟣", modelPlaceholder: "claude-opus-4-8" },
@@ -34,10 +35,10 @@ export function renderOwnKeyFieldPanels(settings, activeProvider, idPrefix) {
     <div id="${idPrefix}-${p.dispatch}-fields" class="pdf-provider-fields" style="display:${activeProvider === p.dispatch ? "block" : "none"}">
       <div class="field own-key-status" id="${idPrefix}-status-${p.dispatch}"></div>
       <div class="field">
-        <label>Modèle</label>
+        <label>${t("pdfQcm.modelLabel")}</label>
         <input type="text" id="${idPrefix}-model-${p.dispatch}" value="${escAttr(settings?.[p.settingsKey]?.model || p.modelPlaceholder)}" placeholder="${p.modelPlaceholder}">
       </div>
-      <p class="pdf-provider-hint">🔒 Clé gérée dans "🔑 Mes clés IA" (chiffrée) — appelée directement depuis ton navigateur, jamais via nos serveurs.</p>
+      <p class="pdf-provider-hint">${t("pdfQcm.ownKeyHint")}</p>
     </div>
   `).join("");
 }
@@ -54,7 +55,7 @@ export function wireOwnKeyProviders({ idPrefix, uid, onSelect }) {
   const ephemeralKeyOverrides = {};
 
   function renderEphemeralInput(providerInfo) {
-    return `<input type="password" class="own-key-ephemeral-input" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}" placeholder="sk-... (pas sauvegardée)" value="${escAttr(ephemeralKeyOverrides[providerInfo.dispatch] || "")}">`;
+    return `<input type="password" class="own-key-ephemeral-input" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}" placeholder="${t("pdfQcm.ephemeralKeyPlaceholder")}" value="${escAttr(ephemeralKeyOverrides[providerInfo.dispatch] || "")}">`;
   }
 
   function wireEphemeralInput(providerInfo) {
@@ -66,24 +67,24 @@ export function wireOwnKeyProviders({ idPrefix, uid, onSelect }) {
   async function refreshStatus(providerInfo) {
     const statusEl = document.getElementById(`${idPrefix}-status-${providerInfo.dispatch}`);
     if (!statusEl) return;
-    statusEl.innerHTML = `<p class="pdf-provider-hint">// Vérification du coffre...</p>`;
+    statusEl.innerHTML = `<p class="pdf-provider-hint">${t("pdfQcm.checkingVault")}</p>`;
 
     if (!isVaultUnlocked()) {
       statusEl.innerHTML = `
-        <label>🔒 Coffre verrouillé</label>
+        <label>${t("pdfQcm.vaultLockedLabel")}</label>
         <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
-          <input type="password" class="own-key-unlock-input" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}" placeholder="Mot de passe" style="flex:1">
-          <button type="button" class="btn secondary sm own-key-unlock-btn" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}">Déverrouiller</button>
+          <input type="password" class="own-key-unlock-input" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}" placeholder="${t("common.passwordLabel")}" style="flex:1">
+          <button type="button" class="btn secondary sm own-key-unlock-btn" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}">${t("pdfQcm.unlockBtn")}</button>
         </div>
-        <p class="pdf-provider-hint">Ou tape une clé juste pour cette fois (pas sauvegardée) :</p>
+        <p class="pdf-provider-hint">${t("pdfQcm.ephemeralKeyHint")}</p>
         ${renderEphemeralInput(providerInfo)}
       `;
       wireEphemeralInput(providerInfo);
       document.querySelector(`.own-key-unlock-btn[data-prefix="${idPrefix}"][data-dispatch="${providerInfo.dispatch}"]`).onclick = async () => {
         const input = document.querySelector(`.own-key-unlock-input[data-prefix="${idPrefix}"][data-dispatch="${providerInfo.dispatch}"]`);
         const ok = await unlockVault(input.value, uid);
-        if (ok) { toast("🔓 Coffre déverrouillé"); refreshStatus(providerInfo); }
-        else toast("❌ Mot de passe incorrect");
+        if (ok) { toast(t("pdfQcm.vaultUnlockedToast")); refreshStatus(providerInfo); }
+        else toast(t("pdfQcm.wrongPasswordToast"));
       };
       return;
     }
@@ -93,8 +94,8 @@ export function wireOwnKeyProviders({ idPrefix, uid, onSelect }) {
 
     if (key) {
       statusEl.innerHTML = `
-        <p class="pdf-provider-hint">✅ Clé enregistrée trouvée pour ${providerInfo.label} — utilisée automatiquement.</p>
-        <button type="button" class="btn secondary sm own-key-override-toggle" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}">✏️ Utiliser une autre clé juste pour cette fois</button>
+        <p class="pdf-provider-hint">${t("pdfQcm.keyFoundHint", { label: providerInfo.label })}</p>
+        <button type="button" class="btn secondary sm own-key-override-toggle" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}">${t("pdfQcm.useOtherKeyBtn")}</button>
         <div class="own-key-override-box" data-prefix="${idPrefix}" data-dispatch="${providerInfo.dispatch}" style="display:none; margin-top:.5rem;">
           ${renderEphemeralInput(providerInfo)}
         </div>
@@ -106,7 +107,7 @@ export function wireOwnKeyProviders({ idPrefix, uid, onSelect }) {
       wireEphemeralInput(providerInfo);
     } else {
       statusEl.innerHTML = `
-        <p class="pdf-provider-hint">⚠️ Aucune clé enregistrée pour ${providerInfo.label}. Ajoute-la dans "🔑 Mes clés IA" pour la retrouver la prochaine fois, ou tape-en une juste pour cette session :</p>
+        <p class="pdf-provider-hint">${t("pdfQcm.noKeyFoundHint", { label: providerInfo.label })}</p>
         ${renderEphemeralInput(providerInfo)}
       `;
       wireEphemeralInput(providerInfo);

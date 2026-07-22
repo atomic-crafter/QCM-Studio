@@ -12,6 +12,7 @@ import {
 
 import { toast } from "../core/runtime.js";
 import { renderLatexHtml } from "../core/latex.js";
+import { t } from "../core/i18n.js";
 
 let db;
 let unsub = null;
@@ -27,8 +28,7 @@ const PRUNE_COOLDOWN_MS = 20000;
 const pruneLastRun = new Map();
 
 const GIPHY_PROXY_URL = (window.__GIPHY_PROXY_URL || localStorage.getItem("qcm_giphy_proxy_url") || "").trim();
-const DEFAULT_CHAT_PLACEHOLDER = "Écrire un message...";
-const CHAT_HINT_PLACEHOLDER = "Écrire un message...";
+const CINEMAX_GIF_URL = new URL("./cinemax.gif", import.meta.url).href;
 
 export function initLiveChat(firestoreDb) {
   db = firestoreDb;
@@ -58,22 +58,43 @@ export function openLiveChat({ mode, id, pseudo, label }) {
   screen.classList.add("chat-enabled");
   panel.style.display = "flex";
   labelEl.textContent = label || "";
-  input.placeholder = CHAT_HINT_PLACEHOLDER;
-  messagesEl.innerHTML = "<div class='quiz-chat-empty'>// Chat en direct</div>";
+  input.placeholder = t("chat.inputPlaceholder");
+  messagesEl.innerHTML = `<div class='quiz-chat-empty'>${t("chat.liveChatEmpty")}</div>`;
   gifPicker.style.display = "none";
 
   if (!GIPHY_PROXY_URL) {
     gifToggle.classList.add("disabled");
-    gifToggle.title = "Ajoute une URL proxy GIF (window.__GIPHY_PROXY_URL)";
+    gifToggle.title = t("chat.gifProxyMissingTitle");
   } else {
     gifToggle.classList.remove("disabled");
-    gifToggle.title = "Envoyer un GIF";
+    gifToggle.title = t("chat.sendGifTitle");
   }
 
   form.onsubmit = async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text || !current) return;
+
+    // if (text.toLowerCase() === "/cinemax") {
+    //   try {
+    //     const messagesRef = mode === "duel"
+    //       ? collection(db, "challenges", id, "messages")
+    //       : collection(db, "rooms", id, "messages");
+
+    //     await addDoc(messagesRef, {
+    //       pseudo,
+    //       text: "cinemax",
+    //       type: "gif",
+    //       gifUrl: CINEMAX_GIF_URL,
+    //       createdAt: serverTimestamp()
+    //     });
+    //     input.value = "";
+    //   } catch (err) {
+    //     const msg = err?.code ? err.code : "erreur";
+    //     toast(`❌ Chat: ${msg}`);
+    //   }
+    //   return;
+    // }
 
     try {
       const messagesRef = mode === "duel"
@@ -88,14 +109,14 @@ export function openLiveChat({ mode, id, pseudo, label }) {
       });
       input.value = "";
     } catch (err) {
-      const msg = err?.code ? err.code : "erreur";
-      toast(`❌ Chat: ${msg}`);
+      const msg = err?.code ? err.code : t("chat.unknownError");
+      toast(t("chat.sendErrorToast", { msg }));
     }
   };
 
   gifToggle.onclick = async () => {
     if (!GIPHY_PROXY_URL) {
-      toast("ℹ️ Proxy GIF manquant");
+      toast(t("chat.gifProxyMissingToast"));
       return;
     }
 
@@ -160,7 +181,7 @@ export function openLiveChat({ mode, id, pseudo, label }) {
     },
     (err) => {
       console.error("liveChat listener error:", err);
-      toast("⚠️ Chat temps réel indisponible (fallback activé)");
+      toast(t("chat.realtimeUnavailableToast"));
       startFallbackPolling(messagesQuery, pseudo, messagesEl, unreadEl);
     }
   );
@@ -193,7 +214,7 @@ export function closeLiveChat(hide = true) {
   if (unreadEl) updateUnreadBadge(unreadEl);
   if (hide && panel) panel.style.display = "none";
   if (hide && screen) screen.classList.remove("chat-enabled");
-  if (input) input.placeholder = DEFAULT_CHAT_PLACEHOLDER;
+  if (input) input.placeholder = t("chat.inputPlaceholder");
 
   current = null;
 }
@@ -206,7 +227,7 @@ export async function postAiCoachMessage(text, options = {}) {
     : collection(db, "rooms", current.id, "messages");
 
   await addDoc(messagesRef, {
-    pseudo: "🤖 Coach IA",
+    pseudo: t("chat.aiCoachAuthor"),
     text: String(text).slice(0, 1800),
     latexEnabled: options.latexEnabled !== false,
     type: "text",
@@ -216,7 +237,7 @@ export async function postAiCoachMessage(text, options = {}) {
 
 function renderMessages(messages, me, el) {
   if (!messages.length) {
-    el.innerHTML = "<div class='quiz-chat-empty'>// Pas encore de message</div>";
+    el.innerHTML = `<div class='quiz-chat-empty'>${t("chat.noMessagesYet")}</div>`;
     return;
   }
 
@@ -323,7 +344,7 @@ async function loadGifs(search, targetEl) {
     const gifs = Array.isArray(json?.data) ? json.data : [];
 
     if (!gifs.length) {
-      targetEl.innerHTML = "<div class='quiz-chat-empty'>// Aucun GIF trouvé</div>";
+      targetEl.innerHTML = `<div class='quiz-chat-empty'>${t("chat.noGifsFound")}</div>`;
       return;
     }
 
@@ -355,14 +376,14 @@ async function loadGifs(search, targetEl) {
           const picker = document.getElementById("quiz-chat-gif-picker");
           if (picker) picker.style.display = "none";
         } catch (err) {
-          const msg = err?.code ? err.code : "erreur";
-          toast(`❌ Envoi GIF impossible (${msg})`);
+          const msg = err?.code ? err.code : t("chat.unknownError");
+          toast(t("chat.gifSendErrorToast", { msg }));
         }
       };
     });
   } catch (e) {
     console.error("Giphy fetch error:", e);
-    targetEl.innerHTML = "<div class='quiz-chat-empty'>// Erreur API GIF</div>";
+    targetEl.innerHTML = `<div class='quiz-chat-empty'>${t("chat.gifApiError")}</div>`;
   }
 }
 

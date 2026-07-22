@@ -145,6 +145,17 @@ Pour chaque question, "exp" doit :
 3. Rester concis : 1 à 3 phrases, denses en information, jamais une simple reformulation de la question.
 Interdiction : ne JAMAIS écrire une explication du type "La réponse correcte est X" sans justification du raisonnement.`.trim();
 
+// Anti copier-coller : sans cette règle explicite, certains modèles se contentent de
+// reformuler légèrement les exercices/questions déjà présents dans le PDF source
+// (ex: "Quelle est la réponse de l'exercice 2 ?"), ce qui est inutile pour l'utilisateur
+// puisqu'il a déjà l'énoncé et la correction sous les yeux dans son cours.
+const ANTI_COPYPASTE_RULES = `
+RÈGLE ANTI COPIER-COLLER — INVENTE, NE RECOPIE PAS :
+- N'extrais JAMAIS un exercice, un énoncé ou une question tel quel depuis le contenu source pour en faire une question de QCM (interdit par exemple : "Quelle est la réponse de l'exercice 2 ?", "Que vaut la question 3 du TD ?", ou toute référence à un numéro d'exercice/page/section du support).
+- Le contenu source est une BASE DE CONNAISSANCE, pas un réservoir de questions à recopier : à partir des notions, définitions, méthodes et raisonnements qu'il contient, INVENTE des questions et énoncés ORIGINAUX qui testent la compréhension et l'application, pas la mémoire du document.
+- Si le cours contient déjà des exercices corrigés, ne les recopie pas et ne redemande jamais leur réponse : imagine de nouveaux cas, exemples ou applications numériques différents qui mobilisent les mêmes notions sous un angle différent.
+- Une question qui n'a de sens que pour quelqu'un ayant le PDF sous les yeux (référence à "l'exercice 2", "la question ci-dessus", "le TD n°3") est INVALIDE : chaque question doit être autonome et compréhensible sans le document source.`.trim();
+
 function truncateSourceText(sourceText, maxChars) {
   const text = String(sourceText || "");
   if (text.length <= maxChars) return { text, truncated: false };
@@ -163,20 +174,39 @@ export function buildGenerationPrompt({
   language = "fr",
   difficulty = "medium",
   latexEnabled = true,
-  maxSourceChars = 220000
+  maxSourceChars = 220000,
+  sourceAttachedSeparately = false
 }) {
-  const { text: truncatedSource, truncated } = truncateSourceText(sourceText, maxSourceChars);
+  // Mode "prompt seul, sans PDF collé" : au lieu de coller le texte extrait
+  // (souvent abîmé pour les formules/tableaux), on dit au modèle que le(s)
+  // PDF sont joints directement à la conversation — l'utilisateur les attache
+  // lui-même dans son LLM, qui les lit nativement (meilleure fidélité qu'une
+  // extraction de texte côté navigateur).
+  const sourceSection = sourceAttachedSeparately
+    ? [
+        "── CONTENU SOURCE ──",
+        "Le contenu source n'est PAS recopié ici : le(s) fichier(s) PDF du cours sont joints directement à cette conversation en pièce jointe. Lis-les et base-toi sur leur contenu réel comme base factuelle principale.",
+        "── FIN DE LA NOTE SUR LE CONTENU SOURCE ──"
+      ]
+    : (() => {
+        const { text: truncatedSource, truncated } = truncateSourceText(sourceText, maxSourceChars);
+        return [
+          "── CONTENU SOURCE (extrait des PDF fournis) ──",
+          truncatedSource,
+          truncated ? "\n[... contenu source tronqué car trop long, base-toi sur ce qui précède ...]" : "",
+          "── FIN DU CONTENU SOURCE ──",
+          "",
+          SOURCE_EXTRACTION_CAVEAT
+        ];
+      })();
 
   const parts = [
     "Tu es un expert en pédagogie et en création de QCM d'entraînement à partir de supports de cours (PDF).",
-    "Utilise le CONTENU SOURCE ci-dessous comme base factuelle principale pour générer les questions. Ne te contredis jamais avec ce contenu.",
+    "Utilise le CONTENU SOURCE comme base factuelle principale pour générer les questions. Ne te contredis jamais avec ce contenu.",
     "",
-    "── CONTENU SOURCE (extrait des PDF fournis) ──",
-    truncatedSource,
-    truncated ? "\n[... contenu source tronqué car trop long, base-toi sur ce qui précède ...]" : "",
-    "── FIN DU CONTENU SOURCE ──",
+    ...sourceSection,
     "",
-    SOURCE_EXTRACTION_CAVEAT,
+    ANTI_COPYPASTE_RULES,
     "",
     userInstructions?.trim()
       ? `── INSTRUCTIONS SPÉCIFIQUES DE L'UTILISATEUR (priment sur le reste si contradiction) ──\n${userInstructions.trim()}\n── FIN DES INSTRUCTIONS ──`
@@ -211,7 +241,8 @@ export function buildTweakPrompt({
   tweakInstruction,
   language = "fr",
   latexEnabled = true,
-  maxSourceChars = 4000
+  maxSourceChars = 4000,
+  sourceAttachedSeparately = false
 }) {
   const { text: truncatedSource, truncated } = truncateSourceText(sourceText, maxSourceChars);
 
@@ -233,9 +264,11 @@ export function buildTweakPrompt({
     String(tweakInstruction || "").trim() || "Améliore la clarté et la qualité pédagogique de cette question.",
     "── FIN DE LA CONSIGNE ──",
     "",
-    truncatedSource
-      ? `── EXTRAIT DE LA SOURCE (contexte factuel, pas la question à traiter) ──\n${truncatedSource}${truncated ? "\n[... tronqué ...]" : ""}\n── FIN DE L'EXTRAIT ──\n\n${SOURCE_EXTRACTION_CAVEAT}\n`
-      : "",
+    sourceAttachedSeparately
+      ? `── CONTEXTE FACTUEL ──\nLe cours source (PDF) est joint directement à cette conversation — lis-le pour le contexte factuel, mais la question à modifier reste UNIQUEMENT celle donnée ci-dessus.\n── FIN ──\n\n${ANTI_COPYPASTE_RULES}`
+      : truncatedSource
+        ? `── EXTRAIT DE LA SOURCE (contexte factuel, pas la question à traiter) ──\n${truncatedSource}${truncated ? "\n[... tronqué ...]" : ""}\n── FIN DE L'EXTRAIT ──\n\n${SOURCE_EXTRACTION_CAVEAT}\n\n${ANTI_COPYPASTE_RULES}`
+        : "",
     "LANGUE :",
     languageInstruction(language),
     "",

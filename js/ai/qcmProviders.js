@@ -8,6 +8,7 @@
 // renvoyer un JSON de la forme {"questions":[...]} ou {"question":{...}} (pour un tweak).
 
 import { normalizeAnswerIndices } from "../core/questionUtils.js";
+import { t } from "../core/i18n.js";
 
 const SETTINGS_KEY = "qcm_pdf_provider_settings";
 
@@ -75,20 +76,20 @@ function proxyBase() {
 
 // ── APPELS RÉSEAU PAR FOURNISSEUR ─────────────────────────────────────────────
 
-async function callGemini(systemPrompt, maxTokens) {
+async function callGemini(systemPrompt, maxTokens, pdfParts = null) {
   const base = proxyBase();
-  if (!base) throw new Error("URL du proxy non configurée (window.__GIPHY_PROXY_URL). Choisis un autre fournisseur ou configure le proxy.");
+  if (!base) throw new Error(t("qcmProviders.proxyNotConfigured"));
 
   const res = await fetch(`${base}/generate-qcm-advanced`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ systemPrompt, maxOutputTokens: maxTokens })
+    body: JSON.stringify({ systemPrompt, maxOutputTokens: maxTokens, pdfParts: pdfParts || undefined })
   });
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 429) throw new Error("Quota Gemini atteint (429). Réessaie dans quelques minutes ou réduis le nombre de questions.");
-    throw new Error(data.error || `Erreur Gemini ${res.status}`);
+    if (res.status === 429) throw new Error(t("qcmProviders.geminiQuotaReduce"));
+    throw new Error(data.error || t("qcmProviders.geminiError", { status: res.status }));
   }
   return JSON.stringify(data);
 }
@@ -98,10 +99,7 @@ async function callGemini(systemPrompt, maxTokens) {
 // de façon confuse (URL relative, 404/405 sans rapport avec le vrai problème).
 function validateBaseUrl(baseUrl, exampleUrl) {
   if (!looksLikeUrl(baseUrl)) {
-    throw new Error(
-      `URL invalide : "${baseUrl.slice(0, 60)}". Ce champ attend juste une URL, ex: "${exampleUrl}" — ` +
-      `pas une commande de terminal (comme "OLLAMA_ORIGINS=... ollama serve", ça se lance dans Terminal, pas ici).`
-    );
+    throw new Error(t("qcmProviders.invalidUrl", { url: baseUrl.slice(0, 60), example: exampleUrl }));
   }
 }
 
@@ -127,9 +125,9 @@ function estimateNumCtx(promptText, maxTokens) {
 async function callOllama(systemPrompt, maxTokens, config, jsonMode = true) {
   const baseUrl = String(config?.baseUrl || "").trim().replace(/\/$/, "");
   const model = String(config?.model || "").trim();
-  if (!baseUrl) throw new Error("URL Ollama manquante (ex: http://localhost:11434)");
+  if (!baseUrl) throw new Error(t("qcmProviders.ollamaUrlMissing"));
   validateBaseUrl(baseUrl, "http://localhost:11434");
-  if (!model) throw new Error("Nom du modèle Ollama manquant (ex: llama3.1)");
+  if (!model) throw new Error(t("qcmProviders.ollamaModelMissing"));
 
   let res;
   try {
@@ -150,20 +148,17 @@ async function callOllama(systemPrompt, maxTokens, config, jsonMode = true) {
       })
     });
   } catch (err) {
-    throw new Error(
-      `Impossible de joindre Ollama sur ${baseUrl}. Vérifie que "ollama serve" tourne et que CORS est autorisé ` +
-      `(variable d'environnement OLLAMA_ORIGINS="*" avant de lancer Ollama).`
-    );
+    throw new Error(t("qcmProviders.ollamaUnreachable", { baseUrl }));
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Erreur Ollama ${res.status} : ${text.slice(0, 200)}`);
+    throw new Error(t("qcmProviders.ollamaError", { status: res.status, text: text.slice(0, 200) }));
   }
 
   const data = await res.json().catch(() => ({}));
   const text = String(data.response || "");
-  if (!text) throw new Error("Réponse Ollama vide");
+  if (!text) throw new Error(t("qcmProviders.ollamaEmptyResponse"));
   return text;
 }
 
@@ -171,9 +166,9 @@ async function callOpenAiCompatible(systemPrompt, maxTokens, config, jsonMode = 
   const baseUrl = String(config?.baseUrl || "").trim().replace(/\/$/, "");
   const apiKey = String(config?.apiKey || "").trim();
   const model = String(config?.model || "").trim();
-  if (!baseUrl) throw new Error("URL de l'API manquante (ex: https://api.openai.com/v1)");
+  if (!baseUrl) throw new Error(t("qcmProviders.apiUrlMissing"));
   validateBaseUrl(baseUrl, "https://api.openai.com/v1");
-  if (!model) throw new Error("Nom du modèle manquant (ex: gpt-4o-mini)");
+  if (!model) throw new Error(t("qcmProviders.modelNameMissing"));
 
   let res;
   try {
@@ -195,16 +190,16 @@ async function callOpenAiCompatible(systemPrompt, maxTokens, config, jsonMode = 
       })
     });
   } catch (err) {
-    throw new Error(`Impossible de joindre l'API sur ${baseUrl} (CORS ou réseau).`);
+    throw new Error(t("qcmProviders.apiUnreachable", { baseUrl }));
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error?.message || data.error || `Erreur API ${res.status}`);
+    throw new Error(data.error?.message || data.error || t("qcmProviders.apiError", { status: res.status }));
   }
 
   const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error("Réponse API vide ou format inattendu");
+  if (!text) throw new Error(t("qcmProviders.apiEmptyResponse"));
   return text;
 }
 
@@ -212,10 +207,18 @@ async function callOpenAiCompatible(systemPrompt, maxTokens, config, jsonMode = 
 // (contrairement à callGemini() qui passe par le proxy Cloudflare + clé admin
 // partagée). Pas de fallback multi-modèles ici (contrairement au Worker) —
 // c'est un chemin "utilisateur avancé, sa propre clé", on reste simple.
-async function callGeminiDirect(systemPrompt, maxTokens, config, jsonMode = true) {
+async function callGeminiDirect(systemPrompt, maxTokens, config, jsonMode = true, pdfParts = null) {
   const apiKey = String(config?.apiKey || "").trim();
   const model = String(config?.model || "").trim() || "gemini-2.5-flash";
-  if (!apiKey) throw new Error("Clé API Gemini manquante");
+  if (!apiKey) throw new Error(t("qcmProviders.geminiKeyMissing"));
+
+  // Les PDF joints passent en inline_data AVANT le texte : Gemini lit le
+  // fichier nativement (bien plus fiable pour tableaux/schémas/formules que
+  // le texte extrait côté navigateur — voir js/ai/pdfExtract.js).
+  const parts = [
+    ...(pdfParts || []).map(p => ({ inline_data: { mime_type: p.mimeType, data: p.data } })),
+    { text: systemPrompt }
+  ];
 
   let res;
   try {
@@ -225,7 +228,7 @@ async function callGeminiDirect(systemPrompt, maxTokens, config, jsonMode = true
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
+          contents: [{ parts }],
           generationConfig: {
             temperature: 0.3,
             maxOutputTokens: maxTokens,
@@ -235,26 +238,38 @@ async function callGeminiDirect(systemPrompt, maxTokens, config, jsonMode = true
       }
     );
   } catch (err) {
-    throw new Error("Impossible de joindre l'API Gemini (réseau/CORS).");
+    throw new Error(t("qcmProviders.geminiUnreachable"));
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 429) throw new Error("Quota Gemini atteint (429). Réessaie dans quelques minutes.");
-    if (res.status === 400 || res.status === 403) throw new Error(data?.error?.message || "Clé API Gemini invalide ou refusée.");
-    throw new Error(data?.error?.message || `Erreur Gemini ${res.status}`);
+    if (res.status === 429) throw new Error(t("qcmProviders.geminiQuota"));
+    if (res.status === 400 || res.status === 403) throw new Error(data?.error?.message || t("qcmProviders.geminiKeyInvalid"));
+    throw new Error(data?.error?.message || t("qcmProviders.geminiError", { status: res.status }));
   }
 
   const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
-  if (!text) throw new Error("Réponse Gemini vide");
+  if (!text) throw new Error(t("qcmProviders.geminiEmptyResponse"));
   return text;
 }
 
 // Appel Claude (Anthropic Messages API) avec la clé perso de l'utilisateur.
-async function callClaude(systemPrompt, maxTokens, config) {
+async function callClaude(systemPrompt, maxTokens, config, pdfParts = null) {
   const apiKey = String(config?.apiKey || "").trim();
   const model = String(config?.model || "").trim() || "claude-opus-4-8";
-  if (!apiKey) throw new Error("Clé API Claude manquante");
+  if (!apiKey) throw new Error(t("qcmProviders.claudeKeyMissing"));
+
+  // Les PDF joints passent en blocs "document" (base64) AVANT le texte :
+  // Claude lit le fichier nativement, comme pour Gemini ci-dessus.
+  const content = pdfParts?.length
+    ? [
+        ...pdfParts.map(p => ({
+          type: "document",
+          source: { type: "base64", media_type: p.mimeType, data: p.data }
+        })),
+        { type: "text", text: systemPrompt }
+      ]
+    : systemPrompt;
 
   let res;
   try {
@@ -269,20 +284,20 @@ async function callClaude(systemPrompt, maxTokens, config) {
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        messages: [{ role: "user", content: systemPrompt }]
+        messages: [{ role: "user", content }]
       })
     });
   } catch (err) {
-    throw new Error("Impossible de joindre l'API Claude (réseau/CORS).");
+    throw new Error(t("qcmProviders.claudeUnreachable"));
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error?.message || `Erreur Claude ${res.status}`);
+    throw new Error(data?.error?.message || t("qcmProviders.claudeError", { status: res.status }));
   }
 
   const text = Array.isArray(data?.content) ? data.content.map(c => c.text || "").join("") : "";
-  if (!text) throw new Error("Réponse Claude vide");
+  if (!text) throw new Error(t("qcmProviders.claudeEmptyResponse"));
   return text;
 }
 
@@ -340,10 +355,7 @@ function throwWithRaw(message, rawText) {
 function parseJsonLoose(rawText) {
   const jsonText = extractJsonObject(rawText);
   if (!jsonText) {
-    throwWithRaw(
-      "Le modèle n'a pas renvoyé de JSON exploitable (probablement du texte libre autour, ou une réponse tronquée).",
-      rawText
-    );
+    throwWithRaw(t("qcmProviders.noUsableJson"), rawText);
   }
   try {
     return JSON.parse(jsonText);
@@ -351,10 +363,7 @@ function parseJsonLoose(rawText) {
     try {
       return JSON.parse(repairJson(jsonText));
     } catch {
-      throwWithRaw(
-        "JSON renvoyé par le modèle invalide (souvent une réponse coupée avant la fin — réduis le nombre de questions, ou réessaie).",
-        rawText
-      );
+      throwWithRaw(t("qcmProviders.invalidJson"), rawText);
     }
   }
 }
@@ -406,12 +415,12 @@ export function parseAndValidateQuestions(rawText) {
   const parsed = parseJsonLoose(rawText);
   const list = Array.isArray(parsed) ? parsed : parsed?.questions;
   if (!Array.isArray(list)) {
-    throwWithRaw("Format inattendu : le JSON ne contient pas de tableau 'questions'.", rawText);
+    throwWithRaw(t("qcmProviders.noQuestionsArray"), rawText);
   }
 
   const valid = dedupeExactQuestions(list.map(normalizeQuestionShape).filter(Boolean));
   if (valid.length === 0) {
-    throwWithRaw("Aucune question valide n'a pu être extraite de la réponse du modèle.", rawText);
+    throwWithRaw(t("qcmProviders.noValidQuestions"), rawText);
   }
   return valid;
 }
@@ -420,7 +429,7 @@ export function parseAndValidateSingleQuestion(rawText) {
   const parsed = parseJsonLoose(rawText);
   const raw = parsed?.question || parsed;
   const question = normalizeQuestionShape(raw);
-  if (!question) throwWithRaw("La question renvoyée par le modèle est invalide.", rawText);
+  if (!question) throwWithRaw(t("qcmProviders.invalidQuestion"), rawText);
   return question;
 }
 
@@ -438,18 +447,18 @@ export function parseAndValidateSingleQuestion(rawText) {
  *   JSON-only alors qu'on attend de la prose.
  * @returns {Promise<string>} texte brut renvoyé par le modèle (à parser ensuite)
  */
-export async function callProvider({ systemPrompt, provider, providerSettings, maxTokens = 4096, jsonMode = true }) {
+export async function callProvider({ systemPrompt, provider, providerSettings, maxTokens = 4096, jsonMode = true, pdfParts = null }) {
   const settings = providerSettings || loadProviderSettings();
 
   if (provider === "ollama") return callOllama(systemPrompt, maxTokens, settings.ollama, jsonMode);
   if (provider === "openai") return callOpenAiCompatible(systemPrompt, maxTokens, settings.openai, jsonMode);
-  if (provider === "claude") return callClaude(systemPrompt, maxTokens, settings.claude);
-  if (provider === "gemini-own") return callGeminiDirect(systemPrompt, maxTokens, settings.geminiOwn, jsonMode);
+  if (provider === "claude") return callClaude(systemPrompt, maxTokens, settings.claude, pdfParts);
+  if (provider === "gemini-own") return callGeminiDirect(systemPrompt, maxTokens, settings.geminiOwn, jsonMode, pdfParts);
   if (provider === "deepseek") {
     return callOpenAiCompatible(systemPrompt, maxTokens, { ...settings.deepseek, baseUrl: "https://api.deepseek.com" }, jsonMode);
   }
   if (provider === "openai-own") {
     return callOpenAiCompatible(systemPrompt, maxTokens, { ...settings.openaiOwn, baseUrl: "https://api.openai.com/v1" }, jsonMode);
   }
-  return callGemini(systemPrompt, maxTokens);
+  return callGemini(systemPrompt, maxTokens, pdfParts);
 }

@@ -20,6 +20,7 @@ import { findSubjectById } from "../core/subjects.js";
 import { state }         from "../core/runtime.js";
 import { startMultiplayer } from "./multiplayer.js";
 import { showScreen, toast } from "../core/runtime.js";
+import { t } from "../core/i18n.js";
 
 let db;
 let challengeUnsub = null;
@@ -72,7 +73,7 @@ async function _dispatchChallenge(targetPseudo, { subjectId, subjectName, subjec
     createdAt:   serverTimestamp()
   });
 
-  toast(`⚔️ Défi envoyé à ${targetPseudo} !`);
+  toast(t("duel.challengeSentToast", { target: targetPseudo }));
 
   // Écoute la réponse de l'adversaire
   const unsub = onSnapshot(doc(db, "challenges", challengeId), (snap) => {
@@ -80,12 +81,12 @@ async function _dispatchChallenge(targetPseudo, { subjectId, subjectName, subjec
     const data = snap.data();
     if (data.status === "accepted") {
       unsub();
-      toast(`✅ ${targetPseudo} a accepté ! C'est parti !`);
+      toast(t("duel.challengeAcceptedToast", { target: targetPseudo }));
       startMultiplayer(challengeId, data.questions, subjectForMultiplayer, state.user, targetPseudo, true);
       showScreen("quiz-screen");
     } else if (data.status === "declined") {
       unsub();
-      toast(`❌ ${targetPseudo} a refusé le défi.`);
+      toast(t("duel.challengeDeclinedToast", { target: targetPseudo }));
       deleteDoc(doc(db, "challenges", challengeId));
     }
   }, (err) => {
@@ -158,8 +159,8 @@ function showChallengeModal(data, challengeId) {
   activeIncomingChallengeCleanup?.();
   document.getElementById("challenge-notification")?.remove();
 
-  const from = data?.from || "Un joueur";
-  const subjectName = data?.subjectName || "Quiz";
+  const from = data?.from || t("duel.unknownPlayer");
+  const subjectName = data?.subjectName || t("duel.quizFallback");
   const subjectIcon = data?.subjectIcon || "⚔️";
   const questions = Array.isArray(data?.questions) ? data.questions : [];
   const questionCount = questions.length;
@@ -172,18 +173,18 @@ function showChallengeModal(data, challengeId) {
     notification.innerHTML = `
       <div class="challenge-notification-icon">⚔️</div>
       <div class="challenge-notification-content">
-        <div class="challenge-notification-title">Défi reçu</div>
-        <div class="challenge-notification-text"><strong>${from}</strong> te défie sur <strong>${subjectIcon} ${subjectName}</strong> (${questionCount} questions)</div>
+        <div class="challenge-notification-title">${t("duel.challengeReceivedTitle")}</div>
+        <div class="challenge-notification-text">${t("duel.challengeReceivedText", { from, icon: subjectIcon, name: subjectName, count: questionCount })}</div>
       </div>
       <div class="challenge-notification-actions">
-        <button class="challenge-response-btn accept" data-action="accept" title="Accepter">✅</button>
-        <button class="challenge-response-btn reject" data-action="decline" title="Refuser">❌</button>
+        <button class="challenge-response-btn accept" data-action="accept" title="${t("common.accept")}">✅</button>
+        <button class="challenge-response-btn reject" data-action="decline" title="${t("common.decline")}">❌</button>
       </div>
     `;
     document.body.appendChild(notification);
   } catch (e) {
     console.warn("challenge notification render failed:", e?.message || e);
-    toast(`⚔️ Défi reçu de ${from}`);
+    toast(t("duel.challengeReceivedToast", { from }));
     return;
   }
 
@@ -196,7 +197,7 @@ function showChallengeModal(data, challengeId) {
 
   if (!acceptBtn || !declineBtn) {
     cleanup();
-    toast(`⚔️ Défi reçu de ${from}`);
+    toast(t("duel.challengeReceivedToast", { from }));
     return;
   }
 
@@ -209,7 +210,7 @@ function showChallengeModal(data, challengeId) {
       showScreen("quiz-screen");
     } catch (e) {
       console.warn("accept challenge failed:", e?.code || e?.message || e);
-      toast("❌ Impossible d'accepter le défi");
+      toast(t("duel.acceptFailedToast"));
     }
   };
 
@@ -219,7 +220,7 @@ function showChallengeModal(data, challengeId) {
       await updateDoc(doc(db, "challenges", challengeId), { status: "declined" });
     } catch (e) {
       console.warn("decline challenge failed:", e?.code || e?.message || e);
-      toast("❌ Impossible de refuser le défi");
+      toast(t("duel.declineFailedToast"));
     }
   };
 

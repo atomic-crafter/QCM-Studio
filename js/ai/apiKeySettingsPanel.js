@@ -25,6 +25,7 @@ import {
   isSharedWithAll,
   unshareApiKey
 } from "./sharedKeyVault.js";
+import { t } from "../core/i18n.js";
 
 function escHtml(s) {
   return String(s)
@@ -38,40 +39,42 @@ function escAttr(s) {
   return String(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-const PROVIDER_INFO = {
-  claude: {
-    label: "Claude (Anthropic)",
-    icon: "🟣",
-    defaultModel: "claude-opus-4-8",
-    modelHint: "ex: claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5",
-    getKeyUrl: "https://console.anthropic.com/settings/keys",
-    getKeyHint: "Payant (au token). Crée une clé sur console.anthropic.com → Settings → API Keys."
-  },
-  gemini: {
-    label: "Gemini (Google)",
-    icon: "🔵",
-    defaultModel: "gemini-2.5-flash",
-    modelHint: "ex: gemini-2.5-flash, gemini-2.0-flash",
-    getKeyUrl: "https://aistudio.google.com/apikey",
-    getKeyHint: "Gratuit (quota généreux). Voir le tuto ci-dessous ⬇️"
-  },
-  deepseek: {
-    label: "DeepSeek",
-    icon: "🟢",
-    defaultModel: "deepseek-chat",
-    modelHint: "ex: deepseek-chat, deepseek-reasoner",
-    getKeyUrl: "https://platform.deepseek.com/api_keys",
-    getKeyHint: "Payant, très bon marché. Crée une clé sur platform.deepseek.com → API keys."
-  },
-  openai: {
-    label: "OpenAI",
-    icon: "⚪",
-    defaultModel: "gpt-4o-mini",
-    modelHint: "ex: gpt-4o-mini, gpt-4.1-mini",
-    getKeyUrl: "https://platform.openai.com/api-keys",
-    getKeyHint: "Payant (au token). Crée une clé sur platform.openai.com → API keys."
-  }
-};
+function getProviderInfo() {
+  return {
+    claude: {
+      label: "Claude (Anthropic)",
+      icon: "🟣",
+      defaultModel: "claude-opus-4-8",
+      modelHint: "ex: claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5",
+      getKeyUrl: "https://console.anthropic.com/settings/keys",
+      getKeyHint: t("apiKeys.claudeHint")
+    },
+    gemini: {
+      label: "Gemini (Google)",
+      icon: "🔵",
+      defaultModel: "gemini-2.5-flash",
+      modelHint: "ex: gemini-2.5-flash, gemini-2.0-flash",
+      getKeyUrl: "https://aistudio.google.com/apikey",
+      getKeyHint: t("apiKeys.geminiHint")
+    },
+    deepseek: {
+      label: "DeepSeek",
+      icon: "🟢",
+      defaultModel: "deepseek-chat",
+      modelHint: "ex: deepseek-chat, deepseek-reasoner",
+      getKeyUrl: "https://platform.deepseek.com/api_keys",
+      getKeyHint: t("apiKeys.deepseekHint")
+    },
+    openai: {
+      label: "OpenAI",
+      icon: "⚪",
+      defaultModel: "gpt-4o-mini",
+      modelHint: "ex: gpt-4o-mini, gpt-4.1-mini",
+      getKeyUrl: "https://platform.openai.com/api-keys",
+      getKeyHint: t("apiKeys.openaiHint")
+    }
+  };
+}
 
 // Correspondance avec les clés de settings non sensibles (js/qcmProviders.js) —
 // "gemini"/"openai" (coffre) correspondent à "geminiOwn"/"openaiOwn" (settings),
@@ -88,37 +91,31 @@ export function openApiKeysPanel(username, uid) {
   wrap.innerHTML = `
     <div class="picker-modal" style="width:min(560px,94vw)">
       <div class="picker-modal-header">
-        <h3>🔑 Mes clés IA</h3>
+        <h3>${t("home.btnMyApiKeys")}</h3>
         <button class="picker-close" id="api-keys-close">✕</button>
       </div>
       <p style="color:var(--text-dim); font-size:.82rem; margin:-0.5rem 0 1rem; line-height:1.5;">
-        Ajoute ta propre clé API pour utiliser "PDF → QCM" avec ton propre compte, sans dépendre de
-        l'autorisation admin. Tes clés sont <strong>chiffrées avant d'être envoyées</strong> — voir le détail en bas de ce panneau.
+        ${t("apiKeys.intro")}
       </p>
       <div id="api-keys-unlock-box"></div>
       <div id="api-keys-list"></div>
       <details style="margin-top:1.2rem;">
-        <summary style="cursor:pointer; color:var(--accent2); font-size:.85rem; font-weight:700;">📘 Comment obtenir une clé Gemini gratuite</summary>
+        <summary style="cursor:pointer; color:var(--accent2); font-size:.85rem; font-weight:700;">${t("apiKeys.geminiTutorialTitle")}</summary>
         <div style="margin-top:.7rem; font-size:.85rem; line-height:1.7; color:var(--text-dim);">
           <ol style="padding-left:1.2rem; margin:0;">
-            <li>Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> et connecte-toi avec un compte Google.</li>
-            <li>Clique sur <strong>"Create API key"</strong> (ou "Créer une clé API").</li>
-            <li>Choisis un projet Google Cloud existant, ou laisse Google en créer un automatiquement.</li>
-            <li>Copie la clé générée (elle commence par <code>AIza...</code>).</li>
-            <li>Colle-la ci-dessus dans le champ <strong>Gemini</strong> et clique "Enregistrer".</li>
+            <li>${t("apiKeys.geminiStep1")} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> ${t("apiKeys.geminiStep1b")}</li>
+            <li>${t("apiKeys.geminiStep2")}</li>
+            <li>${t("apiKeys.geminiStep3")}</li>
+            <li>${t("apiKeys.geminiStep4")}</li>
+            <li>${t("apiKeys.geminiStep5")}</li>
           </ol>
           <p style="margin-top:.6rem;">
-            Le niveau gratuit de Google AI Studio donne accès à un quota quotidien généreux sur les modèles
-            <code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> — largement suffisant pour générer des QCM.
-            Aucune carte bancaire n'est demandée pour ce niveau gratuit.
+            ${t("apiKeys.geminiFreeTierNote")}
           </p>
         </div>
       </details>
       <p style="margin-top:1rem; font-size:.72rem; color:var(--text-dim); line-height:1.5;">
-        🔒 Détail sécurité : tes clés sont chiffrées (AES-256) avec une clé dérivée de <em>ton mot de passe de connexion</em>,
-        jamais envoyé ni stocké nulle part. Firestore ne voit que du texte chiffré illisible — même un accès à la base ne
-        permettrait pas de les lire. Contrepartie : si tu ouvres un nouvel onglet/navigateur sans ressaisir ton mot de
-        passe, il faudra le resaisir ici pour déverrouiller tes clés (rien n'est perdu, juste verrouillé).
+        ${t("apiKeys.securityDetail")}
       </p>
     </div>
   `;
@@ -142,10 +139,10 @@ function renderUnlockBox(uid, username) {
 
   box.innerHTML = `
     <div class="pdf-manual-tweak-panel" style="margin-bottom:1rem;">
-      <label>🔒 Coffre verrouillé — resaisis ton mot de passe pour voir/modifier tes clés</label>
+      <label>${t("apiKeys.vaultLockedLabel")}</label>
       <div style="display:flex; gap:.5rem; margin-top:.4rem;">
-        <input id="api-keys-unlock-password" type="password" placeholder="Mot de passe" autocomplete="current-password" style="flex:1">
-        <button class="btn sm" id="api-keys-unlock-btn">Déverrouiller</button>
+        <input id="api-keys-unlock-password" type="password" placeholder="${t("common.passwordLabel")}" autocomplete="current-password" style="flex:1">
+        <button class="btn sm" id="api-keys-unlock-btn">${t("pdfQcm.unlockBtn")}</button>
       </div>
       <div class="error-msg" id="api-keys-unlock-error" style="display:none"></div>
     </div>
@@ -159,11 +156,11 @@ function renderUnlockBox(uid, username) {
 
     const ok = await unlockVault(pwd, uid);
     if (!ok) {
-      errEl.textContent = "Mot de passe incorrect";
+      errEl.textContent = t("apiKeys.wrongPassword");
       errEl.style.display = "block";
       return;
     }
-    toast("🔓 Coffre déverrouillé");
+    toast(t("pdfQcm.vaultUnlockedToast"));
     renderUnlockBox(uid, username);
     renderProviderList(uid, username);
   };
@@ -178,7 +175,9 @@ async function renderProviderList(uid, username) {
   const listEl = document.getElementById("api-keys-list");
   if (!listEl) return;
 
-  listEl.innerHTML = `<div class="picker-custom-loading">// Chargement...</div>`;
+  const PROVIDER_INFO = getProviderInfo();
+
+  listEl.innerHTML = `<div class="picker-custom-loading">${t("common.loadingSlash")}</div>`;
   const configured = new Set(await getConfiguredProviders(uid));
   const settings = loadProviderSettings();
   const unlocked = isVaultUnlocked();
@@ -205,47 +204,47 @@ async function renderProviderList(uid, username) {
       <div class="qcm-preview-q" style="margin-bottom:.8rem;" data-provider="${provider}">
         <div class="qcm-preview-q-header" style="justify-content:space-between;">
           <span>${info.icon} <strong>${info.label}</strong></span>
-          <span class="tag ${isConfigured ? "cyan" : ""}">${isConfigured ? "✅ Configurée" : "Non configurée"}</span>
+          <span class="tag ${isConfigured ? "cyan" : ""}">${isConfigured ? t("apiKeys.configuredTag") : t("apiKeys.notConfiguredTag")}</span>
         </div>
         <p style="font-size:.75rem; color:var(--text-dim); margin:.3rem 0 .6rem;">
-          ${info.getKeyHint} <a href="${info.getKeyUrl}" target="_blank" rel="noopener">Obtenir une clé →</a>
+          ${info.getKeyHint} <a href="${info.getKeyUrl}" target="_blank" rel="noopener">${t("apiKeys.getKeyLink")}</a>
         </p>
         ${unlocked ? `
           <div class="field" style="margin-bottom:.5rem;">
-            <label>Clé API</label>
-            <input type="password" class="api-key-input" data-provider="${provider}" placeholder="${isConfigured ? "•••••••••••••• (laisser vide = ne pas changer)" : "Colle ta clé ici"}" autocomplete="off">
+            <label>${t("pdfQcm.apiKeyLabel")}</label>
+            <input type="password" class="api-key-input" data-provider="${provider}" placeholder="${isConfigured ? t("apiKeys.keyInputPlaceholderConfigured") : t("apiKeys.keyInputPlaceholderEmpty")}" autocomplete="off">
           </div>
           <div class="field" style="margin-bottom:.6rem;">
-            <label>Modèle</label>
+            <label>${t("pdfQcm.modelLabel")}</label>
             <input type="text" class="api-model-input" data-provider="${provider}" value="${currentModel}" placeholder="${info.modelHint}">
           </div>
           <div style="display:flex; gap:.5rem;">
-            <button class="btn sm api-key-save" data-provider="${provider}">💾 Enregistrer</button>
-            ${isConfigured ? `<button class="btn secondary sm api-key-remove" data-provider="${provider}">🗑️ Retirer</button>` : ""}
+            <button class="btn sm api-key-save" data-provider="${provider}">${t("apiKeys.saveBtn")}</button>
+            ${isConfigured ? `<button class="btn secondary sm api-key-remove" data-provider="${provider}">${t("apiKeys.removeBtn")}</button>` : ""}
           </div>
           ${isConfigured ? `
             <div class="field" style="margin-top:.7rem;">
-              <label>🌐 Partager cette clé (jamais en clair — voir détail sécurité en bas)</label>
+              <label>${t("apiKeys.shareKeyLabel")}</label>
               <label class="pdf-checkbox-label" style="display:flex; align-items:center; gap:.5rem; margin:.3rem 0; font-size:.82rem;">
                 <input type="checkbox" class="share-all-toggle" data-provider="${provider}" ${isPublic ? "checked" : ""}>
-                🌍 Partager avec tout le monde (n'importe quel utilisateur connecté pourra l'emprunter)
+                ${t("apiKeys.shareWithAllLabel")}
               </label>
-              <p style="font-size:.72rem; color:var(--text-dim); margin:.4rem 0 .3rem;">Ou partage avec des personnes précises :</p>
+              <p style="font-size:.72rem; color:var(--text-dim); margin:.4rem 0 .3rem;">${t("apiKeys.orShareSpecific")}</p>
               <div class="share-chip-list" data-provider="${provider}" style="display:flex; flex-wrap:wrap; gap:.4rem; margin:.4rem 0;">
                 ${recipients.length ? recipients.map(u => `
                   <span class="tag" style="display:inline-flex; align-items:center; gap:.3rem;">
                     ${escHtml(u)}
-                    <button class="share-revoke-btn" data-provider="${provider}" data-user="${escAttr(u)}" title="Retirer le partage" style="background:none; border:none; cursor:pointer; color:inherit; font-size:.85rem; line-height:1;">✕</button>
+                    <button class="share-revoke-btn" data-provider="${provider}" data-user="${escAttr(u)}" title="${t("apiKeys.revokeShareTitle")}" style="background:none; border:none; cursor:pointer; color:inherit; font-size:.85rem; line-height:1;">✕</button>
                   </span>
-                `).join("") : `<span style="font-size:.75rem; color:var(--text-dim);">Pas encore partagée avec personne en particulier</span>`}
+                `).join("") : `<span style="font-size:.75rem; color:var(--text-dim);">${t("apiKeys.noOneYet")}</span>`}
               </div>
               <div style="display:flex; gap:.5rem;">
-                <input type="text" class="share-target-input" data-provider="${provider}" placeholder="pseudo exact" maxlength="20" autocomplete="off" style="flex:1">
-                <button class="btn sm share-target-btn" data-provider="${provider}">Partager</button>
+                <input type="text" class="share-target-input" data-provider="${provider}" placeholder="${t("home.exactUsernamePlaceholder")}" maxlength="20" autocomplete="off" style="flex:1">
+                <button class="btn sm share-target-btn" data-provider="${provider}">${t("apiKeys.shareBtn")}</button>
               </div>
             </div>
           ` : ""}
-        ` : (isConfigured ? `<p style="font-size:.78rem; color:var(--text-dim);">🔒 Déverrouille le coffre ci-dessus pour la modifier.</p>` : "")}
+        ` : (isConfigured ? `<p style="font-size:.78rem; color:var(--text-dim);">${t("apiKeys.unlockToEdit")}</p>` : "")}
       </div>
     `;
   }).join("");
@@ -270,16 +269,16 @@ async function renderProviderList(uid, username) {
         current[settingsKey] = { ...current[settingsKey], model };
         saveProviderSettings(current);
 
-        toast(`✅ ${PROVIDER_INFO[provider].label} enregistrée`);
+        toast(t("apiKeys.savedToast", { label: PROVIDER_INFO[provider].label }));
         renderProviderList(uid, username);
       } catch (e) {
         if (e instanceof VaultLockedError) {
-          toast("🔒 Coffre verrouillé, déverrouille-le d'abord");
+          toast(t("apiKeys.vaultLockedToast"));
         } else {
-          toast(`❌ ${e?.message || "Erreur d'enregistrement"}`);
+          toast(`❌ ${e?.message || t("apiKeys.saveErrorFallback")}`);
         }
         btn.disabled = false;
-        btn.textContent = "💾 Enregistrer";
+        btn.textContent = t("apiKeys.saveBtn");
       }
     };
   });
@@ -287,14 +286,14 @@ async function renderProviderList(uid, username) {
   listEl.querySelectorAll(".api-key-remove").forEach(btn => {
     btn.onclick = async () => {
       const provider = btn.dataset.provider;
-      if (!confirm(`Retirer ta clé ${PROVIDER_INFO[provider].label} ?`)) return;
+      if (!confirm(t("apiKeys.confirmRemove", { label: PROVIDER_INFO[provider].label }))) return;
       try {
         await deleteApiKey(uid, provider);
         await unshareApiKey(uid, provider);
-        toast(`🗑️ Clé ${PROVIDER_INFO[provider].label} retirée`);
+        toast(t("apiKeys.removedToast", { label: PROVIDER_INFO[provider].label }));
         renderProviderList(uid, username);
       } catch (e) {
-        toast(`❌ ${e?.message || "Erreur"}`);
+        toast(`❌ ${e?.message || t("common.genericError")}`);
       }
     };
   });
@@ -306,18 +305,18 @@ async function renderProviderList(uid, username) {
       try {
         if (checkbox.checked) {
           await shareApiKeyWithAll(uid, username, provider);
-          toast(`🌍 Clé ${PROVIDER_INFO[provider].label} partagée avec tout le monde`);
+          toast(t("apiKeys.sharedWithAllToast", { label: PROVIDER_INFO[provider].label }));
         } else {
           await unshareApiKeyFromAll(uid, provider);
-          toast(`🔒 Clé ${PROVIDER_INFO[provider].label} retirée du partage public`);
+          toast(t("apiKeys.unsharedFromAllToast", { label: PROVIDER_INFO[provider].label }));
         }
         renderProviderList(uid, username);
       } catch (e) {
         checkbox.checked = !checkbox.checked;
         if (e instanceof VaultLockedError) {
-          toast("🔒 Coffre verrouillé, déverrouille-le d'abord");
+          toast(t("apiKeys.vaultLockedToast"));
         } else {
-          toast(`❌ ${e?.message || "Erreur"}`);
+          toast(`❌ ${e?.message || t("common.genericError")}`);
         }
         checkbox.disabled = false;
       }
@@ -334,13 +333,13 @@ async function renderProviderList(uid, username) {
       btn.disabled = true;
       try {
         await shareApiKeyWithUser(uid, username, provider, target);
-        toast(`🌐 Clé ${PROVIDER_INFO[provider].label} partagée avec ${target}`);
+        toast(t("apiKeys.sharedWithUserToast", { label: PROVIDER_INFO[provider].label, target }));
         renderProviderList(uid, username);
       } catch (e) {
         if (e instanceof VaultLockedError) {
-          toast("🔒 Coffre verrouillé, déverrouille-le d'abord");
+          toast(t("apiKeys.vaultLockedToast"));
         } else {
-          toast(`❌ ${e?.message || "Erreur"}`);
+          toast(`❌ ${e?.message || t("common.genericError")}`);
         }
         btn.disabled = false;
       }
@@ -360,10 +359,10 @@ async function renderProviderList(uid, username) {
       btn.disabled = true;
       try {
         await revokeApiKeyFromUser(uid, provider, target);
-        toast(`🔒 Partage retiré pour ${target}`);
+        toast(t("apiKeys.shareRevokedToast", { target }));
         renderProviderList(uid, username);
       } catch (e) {
-        toast(`❌ ${e?.message || "Erreur"}`);
+        toast(`❌ ${e?.message || t("common.genericError")}`);
         btn.disabled = false;
       }
     };

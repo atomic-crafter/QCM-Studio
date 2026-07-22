@@ -10,6 +10,7 @@ import { buildTopicPrompt } from "./qcmPromptBuilder.js";
 import { callProvider, parseAndValidateQuestions, loadProviderSettings, saveProviderSettings } from "./qcmProviders.js";
 import { OWN_KEY_PROVIDERS, renderOwnKeyToggleButtons, renderOwnKeyFieldPanels, wireOwnKeyProviders } from "./ownKeyProviderUI.js";
 import { callWithAutoFallback, callSharedKey, listAvailableKeyOptions } from "./aiKeyOrchestrator.js";
+import { t } from "../core/i18n.js";
 
 const OWN_KEY_ICONS = Object.fromEntries(OWN_KEY_PROVIDERS.map(p => [p.vaultKey, p.icon]));
 const OWN_KEY_LABELS = { claude: "Claude", gemini: "Gemini", deepseek: "DeepSeek", openai: "OpenAI" };
@@ -22,30 +23,30 @@ function proxyBase() {
 
 // Fournisseur partagé (Gemini, clé admin via le Worker) — gated par
 // l'allowlist admin (voir js/aiAccess.js).
-export async function generateQcmFromPrompt(prompt, count = 10) {
+export async function generateQcmFromPrompt(prompt, count = 10, language = "fr") {
   const base = proxyBase();
-  if (!base) throw new Error("URL du proxy non configurée (window.__GIPHY_PROXY_URL)");
+  if (!base) throw new Error(t("qcmCreator.proxyNotConfigured"));
 
   const res = await fetch(`${base}/generate-qcm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, count })
+    body: JSON.stringify({ prompt, count, language })
   });
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 429) {
-      throw new Error("Quota Gemini atteint (429). Réessaie dans quelques minutes ou génère moins de questions.");
+      throw new Error(t("qcmCreator.quotaError"));
     }
-    throw new Error(data.error || `Erreur ${res.status}`);
+    throw new Error(data.error || t("qcmCreator.httpError", { status: res.status }));
   }
   return data.questions;
 }
 
 // Fournisseur "ma propre clé" — appel direct navigateur → Claude/Gemini/DeepSeek/OpenAI,
 // jamais via le Worker, jamais gated par l'allowlist admin.
-async function generateQcmWithOwnKey({ provider, providerSettings, prompt, count }) {
-  const systemPrompt = buildTopicPrompt({ topic: prompt, count, language: "fr", latexEnabled: true });
+async function generateQcmWithOwnKey({ provider, providerSettings, prompt, count, language = "fr" }) {
+  const systemPrompt = buildTopicPrompt({ topic: prompt, count, language, latexEnabled: true });
   const rawResponse = await callProvider({ systemPrompt, provider, providerSettings, maxTokens: 4096 });
   return parseAndValidateQuestions(rawResponse);
 }
@@ -65,73 +66,86 @@ export function openQcmCreatorModal(username, uid) {
   modal.innerHTML = `
     <div class="picker-modal qcm-creator-inner">
       <div class="picker-modal-header">
-        <h3>✨ Créer un QCM</h3>
+        <h3>${t("qcmCreator.modalTitle")}</h3>
         <button class="picker-close" id="qcm-creator-close">✕</button>
       </div>
 
       <!-- Étape 1 : prompt -->
       <div id="qcm-step-prompt" class="qcm-step">
         <div class="field">
-          <label>Sujet / Prompt</label>
+          <label>${t("qcmCreator.topicLabel")}</label>
           <textarea id="qcm-prompt-input" class="qcm-textarea" rows="3" maxlength="500"
-            placeholder="ex: Les hooks React (useState, useEffect) pour développeurs débutants, questions pratiques en français"></textarea>
+            placeholder="${t("qcmCreator.topicPlaceholder")}"></textarea>
         </div>
         <div class="qcm-options-row">
           <div class="field" style="flex:1">
-            <label>Nombre de questions</label>
+            <label>${t("qcmCreator.countLabel")}</label>
             <select id="qcm-count-input" class="field-select">
-              <option value="5">5 questions</option>
-              <option value="10" selected>10 questions</option>
-              <option value="15">15 questions</option>
-              <option value="20">20 questions</option>
+              <option value="5">${t("qcmCreator.countOption", { count: 5 })}</option>
+              <option value="10" selected>${t("qcmCreator.countOption", { count: 10 })}</option>
+              <option value="15">${t("qcmCreator.countOption", { count: 15 })}</option>
+              <option value="20">${t("qcmCreator.countOption", { count: 20 })}</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1">
+            <label>${t("qcmCreator.contentLanguageLabel")}</label>
+            <select id="qcm-language-input" class="field-select">
+              <option value="fr" selected>Français</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="de">Deutsch</option>
+              <option value="it">Italiano</option>
+              <option value="zh">中文</option>
+              <option value="pt">Português</option>
+              <option value="nl">Nederlands</option>
             </select>
           </div>
         </div>
 
         <div class="field">
-          <label>Fournisseur IA</label>
+          <label>${t("qcmCreator.providerLabel")}</label>
           <div class="room-type-toggle" id="qcm-provider-toggle">
-            <button type="button" class="room-type-btn ${initialProvider === "gemini" ? "active" : ""}" id="qcm-provider-gemini" data-provider="gemini">✨ Gemini (intégré)</button>
+            <button type="button" class="room-type-btn ${initialProvider === "gemini" ? "active" : ""}" id="qcm-provider-gemini" data-provider="gemini">${t("qcmCreator.providerGemini")}</button>
             ${renderOwnKeyToggleButtons(initialProvider, "qcm-provider")}
-            <button type="button" class="room-type-btn ${initialProvider === "shared" ? "active" : ""}" id="qcm-provider-shared" data-provider="shared">🌐 Clé partagée</button>
+            <button type="button" class="room-type-btn ${initialProvider === "shared" ? "active" : ""}" id="qcm-provider-shared" data-provider="shared">${t("qcmCreator.providerShared")}</button>
           </div>
           ${renderOwnKeyFieldPanels(settings, initialProvider, "qcm-provider")}
 
           <div id="qcm-provider-shared-fields" class="pdf-provider-fields" style="display:${initialProvider === "shared" ? "block" : "none"}">
             <div class="field">
-              <label>Qui emprunter ?</label>
+              <label>${t("qcmCreator.sharedPickerLabel")}</label>
               <select id="qcm-shared-picker"></select>
             </div>
-            <p class="pdf-provider-hint">🔒 La clé n'est jamais visible : le serveur l'utilise pour toi et ne te renvoie que le résultat. "Auto" essaie d'abord ta propre clé (si configurée), puis les clés partagées disponibles en cas d'échec.</p>
+            <p class="pdf-provider-hint">${t("qcmCreator.sharedPickerHint")}</p>
           </div>
         </div>
 
         <div id="qcm-gen-error" class="error-msg" style="margin-bottom:.5rem"></div>
-        <button class="btn" id="qcm-generate-btn">✨ Générer →</button>
+        <button class="btn" id="qcm-generate-btn">${t("qcmCreator.generateBtn")}</button>
       </div>
 
       <!-- Étape 2 : prévisualisation + sauvegarde -->
       <div id="qcm-step-preview" class="qcm-step" style="display:none">
         <div class="field">
-          <label>Titre du QCM</label>
-          <input id="qcm-title-input" type="text" maxlength="60" placeholder="ex: React Hooks — Débutant">
+          <label>${t("qcmCreator.qcmTitleLabel")}</label>
+          <input id="qcm-title-input" type="text" maxlength="60" placeholder="${t("qcmCreator.qcmTitlePlaceholder")}">
         </div>
         <div class="field">
-          <label>Date d'examen (optionnel)</label>
+          <label>${t("qcmCreator.examDateLabel")}</label>
           <input type="date" id="qcm-exam-date">
         </div>
         <div class="qcm-visibility-row">
-          <label>Visibilité</label>
+          <label>${t("qcmCreator.visibilityLabel")}</label>
           <div class="room-type-toggle" style="margin-top:.5rem">
-            <button class="room-type-btn active" id="qcm-btn-public">🌐 Public</button>
-            <button class="room-type-btn" id="qcm-btn-private">🔒 Privé</button>
+            <button class="room-type-btn active" id="qcm-btn-public">${t("home.qcmPublic")}</button>
+            <button class="room-type-btn" id="qcm-btn-private">${t("home.qcmPrivate")}</button>
           </div>
         </div>
         <div id="qcm-questions-preview" class="qcm-questions-preview"></div>
         <div id="qcm-save-error" class="error-msg" style="margin-bottom:.5rem"></div>
         <div class="qcm-preview-actions">
-          <button class="btn secondary" id="qcm-retry-btn">← Nouveau prompt</button>
-          <button class="btn" id="qcm-save-btn">💾 Sauvegarder</button>
+          <button class="btn secondary" id="qcm-retry-btn">${t("qcmCreator.retryBtn")}</button>
+          <button class="btn" id="qcm-save-btn">${t("qcmCreator.saveBtn")}</button>
         </div>
       </div>
     </div>
@@ -166,7 +180,7 @@ export function openQcmCreatorModal(username, uid) {
 
   async function refreshSharedPicker() {
     const select = document.getElementById("qcm-shared-picker");
-    select.innerHTML = `<option value="auto">🔄 Auto (ma clé, puis les clés partagées disponibles)</option>`;
+    select.innerHTML = `<option value="auto">${t("qcmCreator.sharedAutoOption")}</option>`;
 
     const options = await listAvailableKeyOptions(uid, username);
     const sharedOnly = options.filter(o => o.kind === "shared");
@@ -174,14 +188,14 @@ export function openQcmCreatorModal(username, uid) {
     sharedOnly.forEach(o => {
       const option = document.createElement("option");
       option.value = `${o.provider}::${o.ownerUid}`;
-      option.textContent = `${OWN_KEY_ICONS[o.provider] || ""} ${OWN_KEY_LABELS[o.provider] || o.provider} — partagée par ${o.sharedBy}`;
+      option.textContent = `${OWN_KEY_ICONS[o.provider] || ""} ${OWN_KEY_LABELS[o.provider] || o.provider}${t("home.sharedByLabel", { user: o.sharedBy })}`;
       select.appendChild(option);
     });
 
     if (!sharedOnly.length) {
       const option = document.createElement("option");
       option.disabled = true;
-      option.textContent = "(aucune clé partagée disponible pour l'instant — le mode Auto utilisera quand même ta propre clé si tu en as une)";
+      option.textContent = t("qcmCreator.noSharedKeyOption");
       select.appendChild(option);
     }
   }
@@ -207,24 +221,25 @@ export function openQcmCreatorModal(username, uid) {
   document.getElementById("qcm-generate-btn").onclick = async () => {
     const promptVal = document.getElementById("qcm-prompt-input").value.trim();
     const count     = parseInt(document.getElementById("qcm-count-input").value);
+    const language  = document.getElementById("qcm-language-input").value;
     const errEl     = document.getElementById("qcm-gen-error");
     errEl.style.display = "none";
 
     if (promptVal.length < 5) {
-      errEl.textContent = "Décris le sujet en au moins 5 caractères";
+      errEl.textContent = t("qcmCreator.topicTooShort");
       errEl.style.display = "block";
       return;
     }
 
     const btn = document.getElementById("qcm-generate-btn");
     btn.disabled = true;
-    btn.textContent = "⏳ Génération en cours...";
+    btn.textContent = t("qcmCreator.generatingBtn");
 
     try {
       if (currentProvider === "gemini") {
-        generatedQuestions = await generateQcmFromPrompt(promptVal, count);
+        generatedQuestions = await generateQcmFromPrompt(promptVal, count, language);
       } else if (currentProvider === "shared") {
-        const systemPrompt = buildTopicPrompt({ topic: promptVal, count, language: "fr", latexEnabled: true });
+        const systemPrompt = buildTopicPrompt({ topic: promptVal, count, language, latexEnabled: true });
         const picked = document.getElementById("qcm-shared-picker").value;
         let rawResponse;
         if (picked === "auto") {
@@ -254,7 +269,8 @@ export function openQcmCreatorModal(username, uid) {
           provider: currentProvider,
           providerSettings,
           prompt: promptVal,
-          count
+          count,
+          language
         });
       }
       await ensureKatexReady();
@@ -268,7 +284,7 @@ export function openQcmCreatorModal(username, uid) {
       errEl.style.display    = "block";
     } finally {
       btn.disabled    = false;
-      btn.textContent = "✨ Générer avec Gemini →";
+      btn.textContent = t("qcmCreator.generateWithGeminiBtn");
     }
   };
 
@@ -285,20 +301,20 @@ export function openQcmCreatorModal(username, uid) {
     errEl.style.display = "none";
 
     if (!title) {
-      errEl.textContent   = "Donne un titre à ton QCM";
+      errEl.textContent   = t("qcmCreator.giveTitleError");
       errEl.style.display = "block";
       return;
     }
 
     const btn = document.getElementById("qcm-save-btn");
     btn.disabled    = true;
-    btn.textContent = "⏳ Sauvegarde...";
+    btn.textContent = t("qcmCreator.savingBtn");
 
     try {
       const examDateRaw = document.getElementById("qcm-exam-date").value;
       const examDate = examDateRaw ? isoDateToDDMMYYYY(examDateRaw) : null;
       await saveCustomQcm({ title, questions: generatedQuestions, createdBy: username, createdByUid: uid, isPublic, examDate, latex: true });
-      toast("✅ QCM sauvegardé !");
+      toast(t("qcmCreator.savedToast"));
       modal.remove();
       import("../ui/home.js").then(m => m.renderCustomQcms(username, uid));
     } catch (e) {
@@ -306,7 +322,7 @@ export function openQcmCreatorModal(username, uid) {
       errEl.style.display = "block";
     } finally {
       btn.disabled    = false;
-      btn.textContent = "💾 Sauvegarder";
+      btn.textContent = t("qcmCreator.saveBtn");
     }
   };
 }
@@ -321,37 +337,37 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
   modal.innerHTML = `
     <div class="picker-modal qcm-creator-inner">
       <div class="picker-modal-header">
-        <h3>${isEdit ? "✏️ Modifier le QCM" : "🧩 Créer un QCM (from scratch)"}</h3>
+        <h3>${isEdit ? t("qcmCreator.editTitle") : t("qcmCreator.scratchTitle")}</h3>
         <button class="picker-close" id="qcm-editor-close">✕</button>
       </div>
 
       <div class="field">
-        <label>Titre</label>
-        <input id="qcm-edit-title" type="text" maxlength="60" placeholder="ex: JavaScript Avancé">
+        <label>${t("qcmCreator.titleLabelShort")}</label>
+        <input id="qcm-edit-title" type="text" maxlength="60" placeholder="${t("qcmCreator.editTitlePlaceholder")}">
       </div>
 
       <div class="field">
-        <label>Date d'examen (optionnel)</label>
+        <label>${t("qcmCreator.examDateLabel")}</label>
         <input type="date" id="qcm-edit-exam-date" value="${escAttr(ddmmyyyyToIsoDate(qcm?.examDate))}">
       </div>
 
       <div class="qcm-visibility-row">
-        <label>Visibilité</label>
+        <label>${t("qcmCreator.visibilityLabel")}</label>
         <div class="room-type-toggle" style="margin-top:.5rem">
-          <button class="room-type-btn active" id="qcm-edit-public">🌐 Public</button>
-          <button class="room-type-btn" id="qcm-edit-private">🔒 Privé</button>
+          <button class="room-type-btn active" id="qcm-edit-public">${t("home.qcmPublic")}</button>
+          <button class="room-type-btn" id="qcm-edit-private">${t("home.qcmPrivate")}</button>
         </div>
       </div>
 
       <div id="qcm-edit-list" class="qcm-questions-preview" style="max-height:50vh; overflow:auto"></div>
       <div style="display:flex; gap:.6rem; margin-top:.8rem">
-        <button class="btn secondary" id="qcm-add-question">+ Ajouter une question</button>
+        <button class="btn secondary" id="qcm-add-question">${t("qcmCreator.addQuestionBtn")}</button>
       </div>
 
       <div id="qcm-edit-error" class="error-msg" style="margin-top:.7rem"></div>
       <div class="qcm-preview-actions" style="margin-top:1rem">
-        <button class="btn secondary" id="qcm-editor-cancel">Annuler</button>
-        <button class="btn" id="qcm-editor-save">${isEdit ? "💾 Sauvegarder" : "✅ Créer"}</button>
+        <button class="btn secondary" id="qcm-editor-cancel">${t("common.cancelBtn")}</button>
+        <button class="btn" id="qcm-editor-save">${isEdit ? t("qcmCreator.saveBtn") : t("qcmCreator.createBtn")}</button>
       </div>
     </div>
   `;
@@ -380,22 +396,22 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
       <div class="qcm-preview-q" data-idx="${index}">
         <div class="qcm-preview-q-header">
           <span class="qcm-preview-q-num">Q${index + 1}</span>
-          <button class="btn-delete-qcm q-remove" data-idx="${index}" title="Supprimer">🗑️</button>
+          <button class="btn-delete-qcm q-remove" data-idx="${index}" title="${t("common.deleteTitle")}">🗑️</button>
         </div>
-        <input class="q-edit-cat" data-idx="${index}" maxlength="80" placeholder="Catégorie" value="${escAttr(question.cat)}" style="margin-bottom:.5rem; width:100%">
-        <textarea class="q-edit-text" data-idx="${index}" rows="2" maxlength="300" placeholder="Question" style="width:100%; margin-bottom:.5rem">${escHtml(question.q)}</textarea>
+        <input class="q-edit-cat" data-idx="${index}" maxlength="80" placeholder="${t("qcmCreator.categoryPlaceholder")}" value="${escAttr(question.cat)}" style="margin-bottom:.5rem; width:100%">
+        <textarea class="q-edit-text" data-idx="${index}" rows="2" maxlength="300" placeholder="${t("qcmCreator.questionPlaceholder")}" style="width:100%; margin-bottom:.5rem">${escHtml(question.q)}</textarea>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem">
           ${question.opts.map((option, optIndex) => `
             <div style="display:flex; gap:.45rem; align-items:center; border:1px solid rgba(255,255,255,.08); border-radius:.7rem; padding:.45rem .55rem;">
               <input class="q-edit-correct" type="checkbox" data-idx="${index}" data-opt="${optIndex}" ${Array.isArray(question.ans) ? question.ans.includes(optIndex) ? "checked" : "" : question.ans === optIndex ? "checked" : ""}>
-              <input class="q-edit-opt" data-idx="${index}" data-opt="${optIndex}" maxlength="200" placeholder="Option ${optIndex + 1}" value="${escAttr(option)}" style="flex:1; border:none; background:transparent; padding:0; min-width:0;">
+              <input class="q-edit-opt" data-idx="${index}" data-opt="${optIndex}" maxlength="200" placeholder="${t("qcmCreator.optionPlaceholder", { num: optIndex + 1 })}" value="${escAttr(option)}" style="flex:1; border:none; background:transparent; padding:0; min-width:0;">
             </div>
           `).join("")}
         </div>
         <div style="display:flex; gap:.6rem; margin-top:.6rem; align-items:center">
-          <span style="font-size:.82rem; color:var(--text-dim)">Coche une ou plusieurs bonnes réponses</span>
+          <span style="font-size:.82rem; color:var(--text-dim)">${t("qcmCreator.checkCorrectHint")}</span>
         </div>
-        <textarea class="q-edit-exp" data-idx="${index}" rows="2" maxlength="400" placeholder="Explication (optionnel)" style="width:100%; margin-top:.6rem">${escHtml(question.exp || "")}</textarea>
+        <textarea class="q-edit-exp" data-idx="${index}" rows="2" maxlength="400" placeholder="${t("qcmCreator.explanationPlaceholder")}" style="width:100%; margin-top:.6rem">${escHtml(question.exp || "")}</textarea>
       </div>
     `).join("");
 
@@ -445,14 +461,14 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
 
   function validate() {
     const title = titleEl.value.trim();
-    if (!title) return "Donne un titre au QCM";
-    if (state.questions.length < 1) return "Ajoute au moins une question";
+    if (!title) return t("qcmCreator.errNoTitle");
+    if (state.questions.length < 1) return t("qcmCreator.errNoQuestion");
 
     for (const [index, question] of state.questions.entries()) {
-      if (!question.q.trim()) return `Question ${index + 1} vide`;
-      if (!Array.isArray(question.opts) || question.opts.length !== 4) return `Question ${index + 1}: 4 options obligatoires`;
-      if (question.opts.some(option => !String(option).trim())) return `Question ${index + 1}: toutes les options sont obligatoires`;
-      if (getCorrectAnswerIndices(question).length === 0) return `Question ${index + 1}: coche au moins une bonne réponse`;
+      if (!question.q.trim()) return t("qcmCreator.errEmptyQuestion", { num: index + 1 });
+      if (!Array.isArray(question.opts) || question.opts.length !== 4) return t("qcmCreator.errNeeds4Options", { num: index + 1 });
+      if (question.opts.some(option => !String(option).trim())) return t("qcmCreator.errAllOptionsRequired", { num: index + 1 });
+      if (getCorrectAnswerIndices(question).length === 0) return t("qcmCreator.errNeedsCorrectAnswer", { num: index + 1 });
     }
 
     return "";
@@ -460,7 +476,7 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
 
   function sanitizedQuestions() {
     return state.questions.map(question => ({
-      cat: String(question.cat || "Général").trim().slice(0, 80) || "Général",
+      cat: String(question.cat || t("qcmCreator.defaultCategory")).trim().slice(0, 80) || t("qcmCreator.defaultCategory"),
       q: String(question.q || "").trim().slice(0, 300),
       opts: question.opts.map(option => String(option || "").trim().slice(0, 200)),
       ans: normalizeAnswerIndices(question.ans).length <= 1 ? (normalizeAnswerIndices(question.ans)[0] ?? 0) : normalizeAnswerIndices(question.ans),
@@ -492,7 +508,7 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
 
     const btn = document.getElementById("qcm-editor-save");
     btn.disabled = true;
-    btn.textContent = isEdit ? "⏳ Sauvegarde..." : "⏳ Création...";
+    btn.textContent = isEdit ? t("qcmCreator.savingBtn") : t("qcmCreator.creatingBtn");
 
     try {
       const examDateRaw = document.getElementById("qcm-edit-exam-date").value;
@@ -506,20 +522,20 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
 
       if (isEdit) {
         await updateCustomQcm({ id: qcm.id, username, uid, ...payload });
-        toast("✅ QCM mis à jour");
+        toast(t("qcmCreator.updatedToast"));
       } else {
         await saveCustomQcm({ createdBy: username, createdByUid: uid, ...payload });
-        toast("✅ QCM créé");
+        toast(t("qcmCreator.createdToast"));
       }
 
       modal.remove();
       import("../ui/home.js").then(module => module.renderCustomQcms(username, uid));
     } catch (errorSave) {
-      errEl.textContent = errorSave.message || "Erreur de sauvegarde";
+      errEl.textContent = errorSave.message || t("qcmCreator.saveErrorFallback");
       errEl.style.display = "block";
     } finally {
       btn.disabled = false;
-      btn.textContent = isEdit ? "💾 Sauvegarder" : "✅ Créer";
+      btn.textContent = isEdit ? t("qcmCreator.saveBtn") : t("qcmCreator.createBtn");
     }
   };
 
@@ -528,7 +544,7 @@ export function openQcmEditorModal(username, qcm = null, uid = null) {
 }
 
 function emptyQuestion() {
-  return { cat: "Général", q: "", opts: ["", "", "", ""], ans: 0, exp: "" };
+  return { cat: t("qcmCreator.defaultCategory"), q: "", opts: ["", "", "", ""], ans: 0, exp: "" };
 }
 
 function normalizeQuestion(question) {
@@ -536,7 +552,7 @@ function normalizeQuestion(question) {
   while (opts.length < 4) opts.push("");
   const correctIndices = normalizeAnswerIndices(question?.ans);
   return {
-    cat: question?.cat || "Général",
+    cat: question?.cat || t("qcmCreator.defaultCategory"),
     q: question?.q || "",
     opts,
     ans: correctIndices.length <= 1 ? (correctIndices[0] ?? 0) : correctIndices,

@@ -15,6 +15,7 @@ import { initApiKeyVault, unlockVault, lockVault } from "../ai/apiKeyVault.js";
 import { initSharedKeyVault } from "../ai/sharedKeyVault.js";
 import { hasAnyOwnOrSharedKey } from "../ai/aiKeyOrchestrator.js";
 import { state, showScreen, toast, configureRuntimeHandlers, setNextQuestionHandler, invokeNextQuestion } from "./runtime.js";
+import { t } from "./i18n.js";
 
 const COOKIE_USER = "qcm_auth_user";
 const COOKIE_MODE = "qcm_auth_mode";
@@ -50,7 +51,7 @@ configureRuntimeHandlers({ renderHome, renderLeaderboard });
 async function guardAiAccess(onAllowed) {
   const allowed = (await canUseAi(state.user, state.isGuest)) || (await hasAnyOwnOrSharedKey(state.uid, state.user, state.isGuest));
   if (!allowed) {
-    toast("🔒 Accès IA restreint — demande à l'admin de t'ajouter à la liste autorisée, ou ajoute/emprunte une clé API dans 🔑 Mes clés IA.");
+    toast(t("app.aiAccessRestricted"));
     return;
   }
   onAllowed();
@@ -158,11 +159,11 @@ async function login() {
 
   errEl.style.display = "none";
   btn.disabled        = true;
-  btn.textContent     = "Connexion...";
+  btn.textContent     = t("app.signingIn");
 
   try {
     ignoreSessionRestore = false;
-    if (!authApi.loginUser) throw new Error("Le module d'authentification est obsolète (cache). Recharge la page avec Ctrl/Cmd+Shift+R.");
+    if (!authApi.loginUser) throw new Error(t("app.staleAuthModule"));
     await authApi.loginUser(username, password);
     const sessionUser = await authApi.getCurrentSessionUser?.();
     if (sessionUser?.username && sessionUser?.uid) {
@@ -174,7 +175,7 @@ async function login() {
     errEl.style.display = "block";
   } finally {
     btn.disabled    = false;
-    btn.textContent = "Connexion →";
+    btn.textContent = t("auth.loginBtn");
   }
 }
 
@@ -188,17 +189,17 @@ async function register() {
   errEl.style.display = "none";
 
   if (password !== confirm) {
-    errEl.textContent   = "Les mots de passe ne correspondent pas";
+    errEl.textContent   = t("app.passwordMismatch");
     errEl.style.display = "block";
     return;
   }
 
   btn.disabled    = true;
-  btn.textContent = "Création...";
+  btn.textContent = t("app.creatingAccount");
 
   try {
     ignoreSessionRestore = false;
-    if (!authApi.registerUser) throw new Error("Le module d'authentification est obsolète (cache). Recharge la page avec Ctrl/Cmd+Shift+R.");
+    if (!authApi.registerUser) throw new Error(t("app.staleAuthModule"));
     await authApi.registerUser(username, password);
     const sessionUser = await authApi.getCurrentSessionUser?.();
     if (sessionUser?.username && sessionUser?.uid) {
@@ -210,7 +211,7 @@ async function register() {
     errEl.style.display = "block";
   } finally {
     btn.disabled    = false;
-    btn.textContent = "Créer le compte →";
+    btn.textContent = t("auth.registerBtn");
   }
 }
 
@@ -232,6 +233,7 @@ function afterAuth(displayName, uid) {
   window.__openQcmCreator = () => guardAiAccess(() => openQcmCreatorModal(state.user, state.uid));
   window.__openQcmScratch = () => openQcmEditorModal(state.user, null, state.uid);
   window.__openPdfQcm = () => guardAiAccess(() => openPdfQcmModal(state.user, state.uid));
+  window.__openPromptOnlyQcm = () => guardAiAccess(() => openPdfQcmModal(state.user, state.uid, { promptOnly: true }));
 
   initPresence(window.__db, displayName, renderOnlineUsers);
   goOnline();
@@ -257,8 +259,8 @@ async function enterGuestMode() {
   document.getElementById("home-pseudo").textContent = state.user;
   document.getElementById("home-avatar").textContent = state.user[0].toUpperCase();
 
-  window.__openQcmCreator = () => toast("⚠️ Mode invité: crée un compte pour créer des QCM");
-  window.__openQcmScratch = () => toast("⚠️ Mode invité: crée un compte pour créer des QCM");
+  window.__openQcmCreator = () => toast(t("app.guestCannotCreateQcm"));
+  window.__openQcmScratch = () => toast(t("app.guestCannotCreateQcm"));
 
   initRoomsPanel();
   showScreen("home-screen");
@@ -287,7 +289,7 @@ function logout() {
 
 // ── QUIT QUIZ ────────────────────────────────────────────────────────────────
 function confirmQuit() {
-  if (confirm("Abandonner le quiz ?")) {
+  if (confirm(t("app.confirmQuitQuiz"))) {
     if (state.isMultiplayer) {
       stopMultiplayer();
       state.isMultiplayer = false;

@@ -4,6 +4,9 @@
 import { getLeaderboard } from "../data-access/firebase.js";
 import { SUBJECTS }        from "../core/subjects.js";
 import { state }           from "../core/runtime.js";
+import { t, getLang }      from "../core/i18n.js";
+
+const LB_LOCALES = { fr: "fr", en: "en", zh: "zh" };
 
 let currentFilter = null; // null = global
 
@@ -18,7 +21,7 @@ function renderFilters() {
   container.innerHTML = "";
 
   const filters = [
-    { id: null, label: "🌐 Global" },
+    { id: null, label: t("lb.global") },
     ...SUBJECTS.map(s => ({ id: s.id, label: `${s.icon} ${s.name}` }))
   ];
 
@@ -39,19 +42,19 @@ function renderFilters() {
 // ── DATA + RENDER ─────────────────────────────────────────────────────────────
 async function loadAndRender(subjectId) {
   const container = document.getElementById("lb-table");
-  container.innerHTML = '<div class="empty-lb"><span class="spinner"></span> Chargement...</div>';
+  container.innerHTML = `<div class="empty-lb"><span class="spinner"></span> ${t("common.loading")}</div>`;
 
   let rows;
   try {
     rows = await getLeaderboard(subjectId);
   } catch (e) {
-    container.innerHTML = '<div class="empty-lb">// Erreur Firebase. Vérifie ta connexion.</div>';
+    container.innerHTML = `<div class="empty-lb">${t("lb.firebaseError")}</div>`;
     console.error(e);
     return;
   }
 
   if (!rows.length) {
-    container.innerHTML = '<div class="empty-lb">// Aucun score enregistré pour ce filtre.</div>';
+    container.innerHTML = `<div class="empty-lb">${t("lb.noScoresForFilter")}</div>`;
     return;
   }
 
@@ -69,7 +72,7 @@ async function loadAndRender(subjectId) {
         <div class="lb-rank ${rankClass(i)}">${rankSymbol(i)}</div>
         <div class="lb-name">
           ${row.pseudo}
-          ${isMe ? '<span style="color:var(--accent);font-size:.75rem"> (vous)</span>' : ""}
+          ${isMe ? `<span style="color:var(--accent);font-size:.75rem"> ${t("lb.youTag")}</span>` : ""}
         </div>
         <div class="lb-score">${row.score}%</div>
         <div class="lb-meta">${meta}</div>
@@ -82,5 +85,5 @@ async function loadAndRender(subjectId) {
 function formatDate(ts) {
   if (!ts) return "";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("fr");
+  return d.toLocaleDateString(LB_LOCALES[getLang()] || "fr");
 }

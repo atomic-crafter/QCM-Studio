@@ -18,6 +18,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { isAiAdmin } from "../auth/aiAccess.js";
+import { t } from "../core/i18n.js";
 
 let db;
 
@@ -193,14 +194,14 @@ export async function getAllCustomQcms() {
 export async function updateCustomQcm({ id, title, questions, isPublic, username, uid, examDate, latex }) {
   const ref  = doc(db, "customQcms", id);
   const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("QCM introuvable");
+  if (!snap.exists()) throw new Error(t("firebase.qcmNotFound"));
 
   const data = snap.data();
   const isOwnerByUid = uid && data.createdByUid === uid;
   const isOwnerByLegacyName = data.createdBy === username;
   const isOwner = isOwnerByUid || isOwnerByLegacyName;
   const isAdmin = isAiAdmin(username);
-  if (!isOwner && !isAdmin) throw new Error("Non autorisé");
+  if (!isOwner && !isAdmin) throw new Error(t("firebase.notAuthorized"));
 
   await updateDoc(ref, {
     title,
@@ -220,12 +221,12 @@ export async function updateCustomQcm({ id, title, questions, isPublic, username
 export async function deleteCustomQcm(id, username, uid = null) {
   const ref  = doc(db, "customQcms", id);
   const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("QCM introuvable");
+  if (!snap.exists()) throw new Error(t("firebase.qcmNotFound"));
   const data = snap.data();
   const isOwnerByUid = uid && data.createdByUid === uid;
   const isOwnerByLegacyName = data.createdBy === username;
   const isOwner = isOwnerByUid || isOwnerByLegacyName;
   const isAdmin = isAiAdmin(username);
-  if (!isOwner && !isAdmin) throw new Error("Non autorisé");
+  if (!isOwner && !isAdmin) throw new Error(t("firebase.notAuthorized"));
   await deleteDoc(ref);
 }

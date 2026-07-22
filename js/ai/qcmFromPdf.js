@@ -7,7 +7,7 @@ import { toast } from "../core/runtime.js";
 import { saveCustomQcm } from "../data-access/firebase.js";
 import { renderLatexHtml, ensureKatexReady } from "../core/latex.js";
 import { getCorrectAnswerIndices, isoDateToDDMMYYYY } from "../core/questionUtils.js";
-import { extractTextFromPdfs } from "./pdfExtract.js";
+import { extractTextFromPdfs, filesToBase64Parts } from "./pdfExtract.js";
 import { buildGenerationPrompt, buildTweakPrompt, getQuestionCountPresets, estimateMaxTokens, getExpectedMinCount } from "./qcmPromptBuilder.js";
 import {
   loadProviderSettings,
@@ -18,10 +18,12 @@ import {
 } from "./qcmProviders.js";
 import { isVaultUnlocked, unlockVault, getApiKey, VaultLockedError } from "./apiKeyVault.js";
 import { callWithAutoFallback, callSharedKey, listAvailableKeyOptions } from "./aiKeyOrchestrator.js";
+import { t } from "../core/i18n.js";
 
 let selectedFiles = [];
 let generatedQuestions = [];
 let lastSourceText = "";
+let lastPdfParts = [];
 
 // Fournisseurs "ma propre clé" : la clé vient du coffre chiffré (js/apiKeyVault.js)
 // au lieu d'être tapée à chaque fois. vaultKey = nom du champ dans le coffre,
@@ -34,11 +36,12 @@ const OWN_KEY_PROVIDERS = [
   { vaultKey: "openai", dispatch: "openai-own", settingsKey: "openaiOwn", label: "OpenAI (ma clé)", icon: "⚪", modelPlaceholder: "gpt-4o-mini" }
 ];
 
-export function openPdfQcmModal(username, uid) {
+export function openPdfQcmModal(username, uid, { promptOnly = false } = {}) {
   document.getElementById("pdf-qcm-modal")?.remove();
   selectedFiles = [];
   generatedQuestions = [];
   lastSourceText = "";
+  lastPdfParts = [];
 
   const settings = loadProviderSettings();
 
@@ -48,44 +51,46 @@ export function openPdfQcmModal(username, uid) {
   modal.innerHTML = `
     <div class="picker-modal qcm-creator-inner pdf-qcm-inner">
       <div class="picker-modal-header">
-        <h3>📄 PDF → QCM</h3>
+        <h3>${promptOnly ? t("pdfQcm.modalTitlePromptOnly") : t("pdfQcm.modalTitle")}</h3>
         <button class="picker-close" id="pdf-qcm-close">✕</button>
       </div>
 
       <!-- Étape 1 : source + options -->
       <div id="pdf-step-source" class="qcm-step">
-        <div class="field">
-          <label>Cours en PDF (un ou plusieurs fichiers)</label>
+        <div class="field" id="pdf-source-file-field">
+          <label>${t("pdfQcm.pdfFilesLabel")}</label>
           <div class="pdf-drop-zone" id="pdf-drop-zone">
             <input type="file" id="pdf-file-input" accept="application/pdf" multiple style="display:none">
-            <button type="button" class="btn secondary sm" id="pdf-pick-btn">📎 Choisir des PDF</button>
-            <span class="pdf-drop-hint">ou glisse-dépose tes fichiers ici</span>
+            <button type="button" class="btn secondary sm" id="pdf-pick-btn">${t("pdfQcm.pickPdfBtn")}</button>
+            <span class="pdf-drop-hint">${t("pdfQcm.dropHint")}</span>
           </div>
           <div id="pdf-file-list" class="pdf-file-list"></div>
         </div>
 
+        ${promptOnly ? `<p class="pdf-provider-hint">${t("pdfQcm.promptOnlyHint")}</p>` : ""}
+
         <div class="field">
-          <label>Instructions (ce que tu veux dans le QCM)</label>
+          <label>${t("pdfQcm.instructionsLabel")}</label>
           <textarea id="pdf-prompt-input" class="qcm-textarea" rows="3" maxlength="1000"
-            placeholder="ex: Concentre-toi sur le chapitre 3 (les protocoles réseau), questions orientées TP, pas de questions sur l'historique."></textarea>
+            placeholder="${t("pdfQcm.instructionsPlaceholder")}"></textarea>
         </div>
 
         <div class="qcm-options-row pdf-options-grid">
           <div class="field">
-            <label>Nombre de questions</label>
+            <label>${t("qcmCreator.countLabel")}</label>
             <select id="pdf-count-mode" class="field-select">
               ${Object.entries(getQuestionCountPresets()).map(([key, preset]) =>
                 `<option value="${key}" ${key === "medium" ? "selected" : ""}>${preset.label}</option>`
               ).join("")}
-              <option value="exact">Nombre exact...</option>
+              <option value="exact">${t("pdfQcm.exactCountOption")}</option>
             </select>
           </div>
           <div class="field" id="pdf-exact-count-field" style="display:none">
-            <label>Combien exactement ?</label>
+            <label>${t("pdfQcm.exactCountLabel")}</label>
             <input type="number" id="pdf-exact-count" min="1" max="100" value="15">
           </div>
           <div class="field">
-            <label>Langue</label>
+            <label>${t("qcmCreator.contentLanguageLabel")}</label>
             <select id="pdf-language" class="field-select">
               <option value="fr" selected>Français</option>
               <option value="en">English</option>
@@ -98,12 +103,12 @@ export function openPdfQcmModal(username, uid) {
             </select>
           </div>
           <div class="field">
-            <label>Difficulté</label>
+            <label>${t("pdfQcm.difficultyLabel")}</label>
             <select id="pdf-difficulty" class="field-select">
-              <option value="easy">Facile</option>
-              <option value="medium" selected>Intermédiaire</option>
-              <option value="hard">Difficile</option>
-              <option value="mixed">Mélangée</option>
+              <option value="easy">${t("pdfQcm.difficultyEasy")}</option>
+              <option value="medium" selected>${t("pdfQcm.difficultyMedium")}</option>
+              <option value="hard">${t("pdfQcm.difficultyHard")}</option>
+              <option value="mixed">${t("pdfQcm.difficultyMixed")}</option>
             </select>
           </div>
         </div>
@@ -111,114 +116,126 @@ export function openPdfQcmModal(username, uid) {
         <div class="field pdf-latex-field">
           <label class="pdf-checkbox-label">
             <input type="checkbox" id="pdf-latex-toggle" checked>
-            Formules mathématiques en LaTeX/KaTeX (activé par défaut — décoche si ton cours n'a pas de formules)
+            ${t("pdfQcm.latexToggleLabel")}
           </label>
         </div>
 
-        <div class="field">
-          <label>Fournisseur IA</label>
+        <div class="field" id="pdf-provider-field">
+          <label>${t("qcmCreator.providerLabel")}</label>
           <div class="room-type-toggle pdf-provider-toggle">
-            <button type="button" class="room-type-btn ${settings.provider === "gemini" ? "active" : ""}" id="pdf-provider-gemini" data-provider="gemini">✨ Gemini (intégré)</button>
-            <button type="button" class="room-type-btn ${settings.provider === "ollama" ? "active" : ""}" id="pdf-provider-ollama" data-provider="ollama">🖥️ Ollama (local)</button>
-            <button type="button" class="room-type-btn ${settings.provider === "openai" ? "active" : ""}" id="pdf-provider-openai" data-provider="openai">🔌 API compatible OpenAI</button>
+            <button type="button" class="room-type-btn ${settings.provider === "gemini" ? "active" : ""}" id="pdf-provider-gemini" data-provider="gemini">${t("qcmCreator.providerGemini")}</button>
+            <button type="button" class="room-type-btn ${settings.provider === "ollama" ? "active" : ""}" id="pdf-provider-ollama" data-provider="ollama">${t("pdfQcm.providerOllama")}</button>
+            <button type="button" class="room-type-btn ${settings.provider === "openai" ? "active" : ""}" id="pdf-provider-openai" data-provider="openai">${t("pdfQcm.providerOpenaiCompatible")}</button>
             ${OWN_KEY_PROVIDERS.map(p => `
               <button type="button" class="room-type-btn ${settings.provider === p.dispatch ? "active" : ""}" id="pdf-provider-${p.dispatch}" data-provider="${p.dispatch}">${p.icon} ${p.label}</button>
             `).join("")}
-            <button type="button" class="room-type-btn ${settings.provider === "shared" ? "active" : ""}" id="pdf-provider-shared" data-provider="shared">🌐 Clé partagée</button>
-            <button type="button" class="room-type-btn ${settings.provider === "manual" ? "active" : ""}" id="pdf-provider-manual" data-provider="manual">✋ Manuel (copier/coller)</button>
+            <button type="button" class="room-type-btn ${settings.provider === "shared" ? "active" : ""}" id="pdf-provider-shared" data-provider="shared">${t("qcmCreator.providerShared")}</button>
+            <button type="button" class="room-type-btn ${settings.provider === "manual" ? "active" : ""}" id="pdf-provider-manual" data-provider="manual">${t("pdfQcm.providerManual")}</button>
           </div>
 
           <div id="pdf-provider-shared-fields" class="pdf-provider-fields" style="display:${settings.provider === "shared" ? "block" : "none"}">
             <div class="field">
-              <label>Qui emprunter ?</label>
+              <label>${t("qcmCreator.sharedPickerLabel")}</label>
               <select id="pdf-shared-picker"></select>
             </div>
-            <p class="pdf-provider-hint">🔒 La clé n'est jamais visible, ni pour toi ni pour personne d'autre : le serveur l'utilise à ta place et ne te renvoie que le résultat. "Auto" essaie d'abord ta propre clé (si configurée), puis bascule sur les clés partagées disponibles en cas d'échec.</p>
+            <p class="pdf-provider-hint">${t("pdfQcm.sharedPickerHint")}</p>
           </div>
 
           <div id="pdf-provider-ollama-fields" class="pdf-provider-fields" style="display:${settings.provider === "ollama" ? "block" : "none"}">
             <div class="field">
-              <label>URL du serveur Ollama</label>
+              <label>${t("pdfQcm.ollamaUrlLabel")}</label>
               <input type="text" id="pdf-ollama-url" value="${escAttr(settings.ollama.baseUrl)}" placeholder="http://localhost:11434">
             </div>
             <div class="field">
-              <label>Modèle</label>
+              <label>${t("pdfQcm.modelLabel")}</label>
               <input type="text" id="pdf-ollama-model" value="${escAttr(settings.ollama.model)}" placeholder="llama3.1">
             </div>
-            <p class="pdf-provider-hint">⚠️ Lance Ollama avec <code>OLLAMA_ORIGINS="*" ollama serve</code> pour autoriser les requêtes depuis ce site.</p>
+            <p class="pdf-provider-hint">${t("pdfQcm.ollamaHint")}</p>
           </div>
 
           <div id="pdf-provider-openai-fields" class="pdf-provider-fields" style="display:${settings.provider === "openai" ? "block" : "none"}">
             <div class="field">
-              <label>URL de base de l'API</label>
+              <label>${t("pdfQcm.apiBaseUrlLabel")}</label>
               <input type="text" id="pdf-openai-url" value="${escAttr(settings.openai.baseUrl)}" placeholder="https://api.openai.com/v1">
             </div>
             <div class="field">
-              <label>Clé API</label>
+              <label>${t("pdfQcm.apiKeyLabel")}</label>
               <input type="password" id="pdf-openai-key" value="${escAttr(settings.openai.apiKey)}" placeholder="sk-...">
             </div>
             <div class="field">
-              <label>Modèle</label>
+              <label>${t("pdfQcm.modelLabel")}</label>
               <input type="text" id="pdf-openai-model" value="${escAttr(settings.openai.model)}" placeholder="gpt-4o-mini">
             </div>
-            <p class="pdf-provider-hint">🔒 Ta clé reste uniquement dans ton navigateur (localStorage) et part directement vers l'URL indiquée ci-dessus — jamais vers nos serveurs.</p>
+            <p class="pdf-provider-hint">${t("pdfQcm.openaiCompatHint")}</p>
           </div>
 
           ${OWN_KEY_PROVIDERS.map(p => `
             <div id="pdf-provider-${p.dispatch}-fields" class="pdf-provider-fields" data-vault-key="${p.vaultKey}" data-settings-key="${p.settingsKey}" style="display:${settings.provider === p.dispatch ? "block" : "none"}">
               <div class="field pdf-own-key-status" id="pdf-own-key-status-${p.dispatch}"></div>
               <div class="field">
-                <label>Modèle</label>
+                <label>${t("pdfQcm.modelLabel")}</label>
                 <input type="text" id="pdf-model-${p.dispatch}" value="${escAttr(settings[p.settingsKey]?.model || p.modelPlaceholder)}" placeholder="${p.modelPlaceholder}">
               </div>
-              <p class="pdf-provider-hint">🔒 Clé gérée dans "🔑 Mes clés IA" (chiffrée) — appelée directement depuis ton navigateur, jamais via nos serveurs.</p>
+              <p class="pdf-provider-hint">${t("pdfQcm.ownKeyHint")}</p>
             </div>
           `).join("")}
 
           <div id="pdf-provider-manual-fields" class="pdf-provider-fields" style="display:${settings.provider === "manual" ? "block" : "none"}">
-            <p class="pdf-provider-hint">✋ Aucun appel réseau : on te génère le prompt complet (règles LaTeX, format JSON, instructions...) à copier dans le LLM de ton choix (ChatGPT, Claude, Gemini, un modèle local en ligne de commande...). Tu colles ensuite sa réponse JSON pour l'importer.</p>
+            <p class="pdf-provider-hint">${t("pdfQcm.manualModeHint")}</p>
+            <label class="pdf-checkbox-label">
+              <input type="checkbox" id="pdf-manual-no-extract-toggle">
+              ${t("pdfQcm.noExtractToggleLabel")}
+            </label>
           </div>
+        </div>
+
+        <div class="field pdf-native-pdf-field" id="pdf-native-pdf-field" style="display:none">
+          <label class="pdf-checkbox-label">
+            <input type="checkbox" id="pdf-native-pdf-toggle">
+            ${t("pdfQcm.nativePdfToggleLabel")}
+          </label>
+          <p class="pdf-provider-hint">${t("pdfQcm.nativePdfHint")}</p>
         </div>
 
         <div id="pdf-gen-error" class="error-msg" style="margin-bottom:.5rem"></div>
         <div id="pdf-gen-progress" class="pdf-gen-progress" style="display:none"></div>
-        <button class="btn" id="pdf-generate-btn">✨ Générer le QCM →</button>
+        <button class="btn" id="pdf-generate-btn">${t("pdfQcm.generateBtn")}</button>
       </div>
 
       <!-- Étape 1bis (mode manuel) : copier le prompt / coller le JSON -->
       <div id="pdf-step-manual" class="qcm-step" style="display:none">
         <div class="field">
-          <label>Prompt à copier-coller dans ton LLM (ChatGPT, Claude, Gemini, modèle local...)</label>
+          <label>${t("pdfQcm.manualPromptLabel")}</label>
           <textarea id="pdf-manual-prompt" class="qcm-textarea pdf-manual-prompt-box" rows="10" readonly></textarea>
-          <button type="button" class="btn secondary sm" id="pdf-manual-copy-btn" style="align-self:flex-start">📋 Copier le prompt</button>
+          <button type="button" class="btn secondary sm" id="pdf-manual-copy-btn" style="align-self:flex-start">${t("pdfQcm.copyPromptBtn")}</button>
         </div>
         <div class="field">
-          <label>Réponse JSON du modèle (colle-la ici)</label>
+          <label>${t("pdfQcm.manualJsonLabel")}</label>
           <textarea id="pdf-manual-json-input" class="qcm-textarea" rows="8" placeholder='{"questions": [...]}'></textarea>
         </div>
         <div id="pdf-manual-error" class="error-msg" style="margin-bottom:.5rem"></div>
         <div class="qcm-preview-actions">
-          <button class="btn secondary" id="pdf-manual-back-btn">← Retour aux options</button>
-          <button class="btn" id="pdf-manual-import-btn">📥 Importer le JSON →</button>
+          <button class="btn secondary" id="pdf-manual-back-btn">${t("pdfQcm.backToOptionsBtn")}</button>
+          <button class="btn" id="pdf-manual-import-btn">${t("pdfQcm.importJsonBtn")}</button>
         </div>
       </div>
 
       <!-- Étape 2 : prévisualisation + tweak + sauvegarde -->
       <div id="pdf-step-preview" class="qcm-step" style="display:none">
         <div class="field">
-          <label>Titre du QCM</label>
-          <input id="pdf-title-input" type="text" maxlength="60" placeholder="ex: Réseaux — Chapitre 3">
+          <label>${t("qcmCreator.qcmTitleLabel")}</label>
+          <input id="pdf-title-input" type="text" maxlength="60" placeholder="${t("pdfQcm.titlePlaceholder")}">
         </div>
         <div class="qcm-options-row pdf-options-grid">
           <div class="field">
-            <label>Date d'examen (optionnel)</label>
+            <label>${t("qcmCreator.examDateLabel")}</label>
             <input type="date" id="pdf-exam-date">
           </div>
           <div class="field">
-            <label>Visibilité</label>
+            <label>${t("qcmCreator.visibilityLabel")}</label>
             <div class="room-type-toggle" style="margin-top:.1rem">
-              <button type="button" class="room-type-btn active" id="pdf-btn-public">🌐 Public</button>
-              <button type="button" class="room-type-btn" id="pdf-btn-private">🔒 Privé</button>
+              <button type="button" class="room-type-btn active" id="pdf-btn-public">${t("home.qcmPublic")}</button>
+              <button type="button" class="room-type-btn" id="pdf-btn-private">${t("home.qcmPrivate")}</button>
             </div>
           </div>
         </div>
@@ -227,13 +244,18 @@ export function openPdfQcmModal(username, uid) {
 
         <div id="pdf-save-error" class="error-msg" style="margin-bottom:.5rem"></div>
         <div class="qcm-preview-actions">
-          <button class="btn secondary" id="pdf-retry-btn">← Nouveau prompt</button>
-          <button class="btn" id="pdf-save-btn">💾 Sauvegarder</button>
+          <button class="btn secondary" id="pdf-retry-btn">${t("qcmCreator.retryBtn")}</button>
+          <button class="btn" id="pdf-save-btn">${t("qcmCreator.saveBtn")}</button>
         </div>
       </div>
     </div>
   `;
   document.body.appendChild(modal);
+
+  if (promptOnly) {
+    document.getElementById("pdf-source-file-field").style.display = "none";
+    document.getElementById("pdf-provider-field").style.display = "none";
+  }
 
   let isPublic = true;
   let latexEnabled = true;
@@ -277,7 +299,7 @@ export function openPdfQcmModal(username, uid) {
         <span class="pdf-file-icon">📄</span>
         <span class="pdf-file-name">${escHtml(file.name)}</span>
         <span class="pdf-file-size">${formatFileSize(file.size)}</span>
-        <button type="button" class="pdf-file-remove" data-index="${index}" title="Retirer">✕</button>
+        <button type="button" class="pdf-file-remove" data-index="${index}" title="${t("pdfQcm.removeFileTitle")}">✕</button>
       </div>
     `).join("");
 
@@ -300,7 +322,7 @@ export function openPdfQcmModal(username, uid) {
   };
 
   // ── Provider toggle ─────────────────────────────────────────────────────
-  let currentProvider = settings.provider;
+  let currentProvider = promptOnly ? "manual" : settings.provider;
   const OWN_KEY_DISPATCH_VALUES = OWN_KEY_PROVIDERS.map(p => p.dispatch);
   const ephemeralKeyOverrides = {}; // dispatch -> clé tapée juste pour cette session (jamais persistée)
 
@@ -316,11 +338,38 @@ export function openPdfQcmModal(username, uid) {
     });
     document.getElementById("pdf-provider-shared-fields").style.display = provider === "shared" ? "block" : "none";
     document.getElementById("pdf-provider-manual-fields").style.display = provider === "manual" ? "block" : "none";
-    document.getElementById("pdf-generate-btn").textContent = provider === "manual" ? "📋 Générer le prompt →" : "✨ Générer le QCM →";
+    document.getElementById("pdf-generate-btn").textContent = provider === "manual" ? t("pdfQcm.generatePromptBtn") : t("pdfQcm.generateBtn");
 
     const ownKeyInfo = OWN_KEY_PROVIDERS.find(p => p.dispatch === provider);
     if (ownKeyInfo) refreshOwnKeyStatus(ownKeyInfo);
     if (provider === "shared") refreshSharedPicker();
+    updateNativePdfFieldVisibility();
+  }
+
+  // Lecture native du PDF (sans extraction de texte côté navigateur) — seuls
+  // Gemini et Claude savent lire un PDF joint nativement (inline_data /
+  // document block), donc uniquement disponible pour : Gemini intégré,
+  // Gemini/Claude avec sa propre clé, ou une clé partagée dont le fournisseur
+  // choisi (pas "Auto", dont on ne connaît pas le fournisseur à l'avance) est
+  // justement gemini/claude.
+  function nativePdfSupported() {
+    if (currentProvider === "gemini" || currentProvider === "gemini-own" || currentProvider === "claude") return true;
+    if (currentProvider === "shared") {
+      const picked = document.getElementById("pdf-shared-picker")?.value;
+      if (!picked || picked === "auto") return false;
+      const [sharedProvider] = picked.split("::");
+      return sharedProvider === "gemini" || sharedProvider === "claude";
+    }
+    return false;
+  }
+
+  function updateNativePdfFieldVisibility() {
+    const field = document.getElementById("pdf-native-pdf-field");
+    const supported = nativePdfSupported();
+    field.style.display = supported ? "block" : "none";
+    if (!supported) {
+      document.getElementById("pdf-native-pdf-toggle").checked = false;
+    }
   }
   document.getElementById("pdf-provider-gemini").onclick = () => setProvider("gemini");
   document.getElementById("pdf-provider-ollama").onclick = () => setProvider("ollama");
@@ -336,7 +385,7 @@ export function openPdfQcmModal(username, uid) {
 
   async function refreshSharedPicker() {
     const select = document.getElementById("pdf-shared-picker");
-    select.innerHTML = `<option value="auto">🔄 Auto (ma clé, puis les clés partagées disponibles)</option>`;
+    select.innerHTML = `<option value="auto">${t("qcmCreator.sharedAutoOption")}</option>`;
 
     const options = await listAvailableKeyOptions(uid, username);
     const sharedOnly = options.filter(o => o.kind === "shared");
@@ -344,22 +393,25 @@ export function openPdfQcmModal(username, uid) {
     sharedOnly.forEach(o => {
       const option = document.createElement("option");
       option.value = `${o.provider}::${o.ownerUid}`;
-      option.textContent = `${OWN_KEY_ICONS[o.provider] || ""} ${OWN_KEY_LABELS[o.provider] || o.provider} — partagée par ${o.sharedBy}`;
+      option.textContent = `${OWN_KEY_ICONS[o.provider] || ""} ${OWN_KEY_LABELS[o.provider] || o.provider}${t("home.sharedByLabel", { user: o.sharedBy })}`;
       select.appendChild(option);
     });
 
     if (!sharedOnly.length) {
       const option = document.createElement("option");
       option.disabled = true;
-      option.textContent = "(aucune clé partagée disponible pour l'instant — le mode Auto utilisera quand même ta propre clé si tu en as une)";
+      option.textContent = t("qcmCreator.noSharedKeyOption");
       select.appendChild(option);
     }
+
+    select.onchange = updateNativePdfFieldVisibility;
+    updateNativePdfFieldVisibility();
   }
 
-  setProvider(settings.provider);
+  setProvider(promptOnly ? "manual" : settings.provider);
 
   function renderEphemeralInput(providerInfo) {
-    return `<input type="password" class="pdf-own-key-ephemeral-input" data-dispatch="${providerInfo.dispatch}" placeholder="sk-... (pas sauvegardée)" value="${escAttr(ephemeralKeyOverrides[providerInfo.dispatch] || "")}">`;
+    return `<input type="password" class="pdf-own-key-ephemeral-input" data-dispatch="${providerInfo.dispatch}" placeholder="${t("pdfQcm.ephemeralKeyPlaceholder")}" value="${escAttr(ephemeralKeyOverrides[providerInfo.dispatch] || "")}">`;
   }
 
   function wireEphemeralInput(providerInfo) {
@@ -371,24 +423,24 @@ export function openPdfQcmModal(username, uid) {
   async function refreshOwnKeyStatus(providerInfo) {
     const statusEl = document.getElementById(`pdf-own-key-status-${providerInfo.dispatch}`);
     if (!statusEl) return;
-    statusEl.innerHTML = `<p class="pdf-provider-hint">// Vérification du coffre...</p>`;
+    statusEl.innerHTML = `<p class="pdf-provider-hint">${t("pdfQcm.checkingVault")}</p>`;
 
     if (!isVaultUnlocked()) {
       statusEl.innerHTML = `
-        <label>🔒 Coffre verrouillé</label>
+        <label>${t("pdfQcm.vaultLockedLabel")}</label>
         <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
-          <input type="password" class="pdf-own-key-unlock-input" data-dispatch="${providerInfo.dispatch}" placeholder="Mot de passe" style="flex:1">
-          <button type="button" class="btn secondary sm pdf-own-key-unlock-btn" data-dispatch="${providerInfo.dispatch}">Déverrouiller</button>
+          <input type="password" class="pdf-own-key-unlock-input" data-dispatch="${providerInfo.dispatch}" placeholder="${t("common.passwordLabel")}" style="flex:1">
+          <button type="button" class="btn secondary sm pdf-own-key-unlock-btn" data-dispatch="${providerInfo.dispatch}">${t("pdfQcm.unlockBtn")}</button>
         </div>
-        <p class="pdf-provider-hint">Ou tape une clé juste pour cette fois (pas sauvegardée) :</p>
+        <p class="pdf-provider-hint">${t("pdfQcm.ephemeralKeyHint")}</p>
         ${renderEphemeralInput(providerInfo)}
       `;
       wireEphemeralInput(providerInfo);
       document.querySelector(`.pdf-own-key-unlock-btn[data-dispatch="${providerInfo.dispatch}"]`).onclick = async () => {
         const input = document.querySelector(`.pdf-own-key-unlock-input[data-dispatch="${providerInfo.dispatch}"]`);
         const ok = await unlockVault(input.value, uid);
-        if (ok) { toast("🔓 Coffre déverrouillé"); refreshOwnKeyStatus(providerInfo); }
-        else toast("❌ Mot de passe incorrect");
+        if (ok) { toast(t("pdfQcm.vaultUnlockedToast")); refreshOwnKeyStatus(providerInfo); }
+        else toast(t("pdfQcm.wrongPasswordToast"));
       };
       return;
     }
@@ -402,8 +454,8 @@ export function openPdfQcmModal(username, uid) {
 
     if (key) {
       statusEl.innerHTML = `
-        <p class="pdf-provider-hint">✅ Clé enregistrée trouvée pour ${providerInfo.label} — utilisée automatiquement.</p>
-        <button type="button" class="btn secondary sm pdf-own-key-override-toggle" data-dispatch="${providerInfo.dispatch}">✏️ Utiliser une autre clé juste pour cette fois</button>
+        <p class="pdf-provider-hint">${t("pdfQcm.keyFoundHint", { label: providerInfo.label })}</p>
+        <button type="button" class="btn secondary sm pdf-own-key-override-toggle" data-dispatch="${providerInfo.dispatch}">${t("pdfQcm.useOtherKeyBtn")}</button>
         <div class="pdf-own-key-override-box" data-dispatch="${providerInfo.dispatch}" style="display:none; margin-top:.5rem;">
           ${renderEphemeralInput(providerInfo)}
         </div>
@@ -415,7 +467,7 @@ export function openPdfQcmModal(username, uid) {
       wireEphemeralInput(providerInfo);
     } else {
       statusEl.innerHTML = `
-        <p class="pdf-provider-hint">⚠️ Aucune clé enregistrée pour ${providerInfo.label}. Ajoute-la dans "🔑 Mes clés IA" pour la retrouver la prochaine fois, ou tape-en une juste pour cette session :</p>
+        <p class="pdf-provider-hint">${t("pdfQcm.noKeyFoundHint", { label: providerInfo.label })}</p>
         ${renderEphemeralInput(providerInfo)}
       `;
       wireEphemeralInput(providerInfo);
@@ -471,8 +523,9 @@ export function openPdfQcmModal(username, uid) {
 
   function applyDefaultTitle() {
     const promptVal = document.getElementById("pdf-prompt-input").value.trim();
-    document.getElementById("pdf-title-input").value =
-      promptVal ? (promptVal.length > 55 ? promptVal.slice(0, 52) + "..." : promptVal) : selectedFiles[0].name.replace(/\.pdf$/i, "");
+    document.getElementById("pdf-title-input").value = promptVal
+      ? (promptVal.length > 55 ? promptVal.slice(0, 52) + "..." : promptVal)
+      : (selectedFiles[0]?.name.replace(/\.pdf$/i, "") || "");
   }
 
   async function goToPreview() {
@@ -490,34 +543,55 @@ export function openPdfQcmModal(username, uid) {
     const progressEl = document.getElementById("pdf-gen-progress");
     errEl.style.display = "none";
 
-    if (selectedFiles.length === 0) {
-      errEl.textContent = "Ajoute au moins un fichier PDF";
+    const isManual = currentProvider === "manual";
+    const noExtract = isManual && (promptOnly || document.getElementById("pdf-manual-no-extract-toggle").checked);
+    const nativePdf = !isManual && nativePdfSupported() && document.getElementById("pdf-native-pdf-toggle").checked;
+
+    if (selectedFiles.length === 0 && !noExtract) {
+      errEl.textContent = t("pdfQcm.needAtLeastOnePdf");
       errEl.style.display = "block";
       return;
     }
 
     const providerSettings = await currentProviderSettings();
     saveProviderSettings(stripSecretsForPersist(providerSettings));
-    const isManual = currentProvider === "manual";
 
     const btn = document.getElementById("pdf-generate-btn");
     btn.disabled = true;
-    btn.textContent = "⏳ Extraction des PDF...";
-    progressEl.style.display = "block";
-    progressEl.textContent = `Extraction en cours (0 / ${selectedFiles.length} fichiers)...`;
 
     try {
-      const { text } = await extractTextFromPdfs(selectedFiles, ({ fileIndex, fileName, totalFiles }) => {
-        progressEl.textContent = `Extraction en cours : ${fileName} (${fileIndex + 1} / ${totalFiles})...`;
-      });
+      let text = "";
+      let pdfParts = [];
+      if (nativePdf) {
+        btn.textContent = t("pdfQcm.encodingPdfBtn");
+        progressEl.style.display = "block";
+        progressEl.textContent = t("pdfQcm.encodingPdfProgress");
+        pdfParts = await filesToBase64Parts(selectedFiles);
+        lastSourceText = "";
+        lastPdfParts = pdfParts;
+      } else if (noExtract) {
+        lastSourceText = "";
+        lastPdfParts = [];
+      } else {
+        btn.textContent = t("pdfQcm.extractingBtn");
+        progressEl.style.display = "block";
+        progressEl.textContent = t("pdfQcm.extractingProgress", { done: 0, total: selectedFiles.length });
 
-      if (!text.trim()) {
-        throw new Error("Aucun texte n'a pu être extrait de ces PDF (peut-être des scans/images sans texte sélectionnable).");
+        const extracted = await extractTextFromPdfs(selectedFiles, ({ fileIndex, fileName, totalFiles }) => {
+          progressEl.textContent = t("pdfQcm.extractingFileProgress", { fileName, current: fileIndex + 1, total: totalFiles });
+        });
+        text = extracted.text;
+
+        if (!text.trim()) {
+          throw new Error(t("pdfQcm.noTextExtracted"));
+        }
+        lastSourceText = text;
+        lastPdfParts = [];
       }
-      lastSourceText = text;
 
       const systemPrompt = buildGenerationPrompt({
         sourceText: text,
+        sourceAttachedSeparately: noExtract || nativePdf,
         userInstructions: document.getElementById("pdf-prompt-input").value,
         countMode: document.getElementById("pdf-count-mode").value,
         exactCount: document.getElementById("pdf-exact-count").value,
@@ -535,8 +609,8 @@ export function openPdfQcmModal(username, uid) {
         return;
       }
 
-      btn.textContent = "⏳ Génération en cours...";
-      progressEl.textContent = "Le modèle rédige les questions, ça peut prendre jusqu'à une minute...";
+      btn.textContent = t("pdfQcm.generatingBtn");
+      progressEl.textContent = t("pdfQcm.generatingProgress");
 
       const maxTokens = estimateMaxTokens(
         document.getElementById("pdf-count-mode").value,
@@ -550,10 +624,10 @@ export function openPdfQcmModal(username, uid) {
           rawResponse = await callWithAutoFallback({ uid, username, systemPrompt, maxTokens, jsonMode: true });
         } else {
           const [sharedProvider, ownerUid] = picked.split("::");
-          rawResponse = await callSharedKey({ ownerUid, provider: sharedProvider, systemPrompt, maxTokens, jsonMode: true });
+          rawResponse = await callSharedKey({ ownerUid, provider: sharedProvider, systemPrompt, maxTokens, jsonMode: true, pdfParts: nativePdf ? pdfParts : null });
         }
       } else {
-        rawResponse = await callProvider({ systemPrompt, provider: currentProvider, providerSettings, maxTokens });
+        rawResponse = await callProvider({ systemPrompt, provider: currentProvider, providerSettings, maxTokens, pdfParts: nativePdf ? pdfParts : null });
       }
 
       generatedQuestions = parseAndValidateQuestions(rawResponse);
@@ -563,7 +637,7 @@ export function openPdfQcmModal(username, uid) {
         document.getElementById("pdf-exact-count").value
       );
       if (generatedQuestions.length < expectedMin) {
-        toast(`⚠️ Tu as demandé au moins ${expectedMin} questions, seulement ${generatedQuestions.length} ont été générées/validées. Le PDF source est peut-être trop court, ou le modèle n'a pas respecté la consigne — tu peux réessayer ou changer de modèle.`);
+        toast(t("pdfQcm.underfilledToast", { expected: expectedMin, actual: generatedQuestions.length }));
       }
 
       await goToPreview();
@@ -571,7 +645,7 @@ export function openPdfQcmModal(username, uid) {
       renderErrorWithRaw(errEl, e);
     } finally {
       btn.disabled = false;
-      btn.textContent = currentProvider === "manual" ? "📋 Générer le prompt →" : "✨ Générer le QCM →";
+      btn.textContent = currentProvider === "manual" ? t("pdfQcm.generatePromptBtn") : t("pdfQcm.generateBtn");
       progressEl.style.display = "none";
     }
   };
@@ -579,7 +653,7 @@ export function openPdfQcmModal(username, uid) {
   // ── Mode manuel : copier le prompt / coller le JSON ────────────────────
   document.getElementById("pdf-manual-copy-btn").onclick = async () => {
     const ok = await copyToClipboard(document.getElementById("pdf-manual-prompt").value);
-    toast(ok ? "📋 Prompt copié !" : "❌ Copie impossible, sélectionne le texte manuellement");
+    toast(ok ? t("pdfQcm.promptCopiedToast") : t("pdfQcm.copyFailedToast"));
   };
 
   document.getElementById("pdf-manual-back-btn").onclick = () => {
@@ -593,7 +667,7 @@ export function openPdfQcmModal(username, uid) {
     const raw = document.getElementById("pdf-manual-json-input").value.trim();
 
     if (!raw) {
-      errEl.textContent = "Colle la réponse JSON du modèle avant d'importer";
+      errEl.textContent = t("pdfQcm.pasteJsonBeforeImport");
       errEl.style.display = "block";
       return;
     }
@@ -606,7 +680,7 @@ export function openPdfQcmModal(username, uid) {
         document.getElementById("pdf-exact-count").value
       );
       if (generatedQuestions.length < expectedMin) {
-        toast(`⚠️ Tu as demandé au moins ${expectedMin} questions, seulement ${generatedQuestions.length} ont été trouvées dans le JSON collé.`);
+        toast(t("pdfQcm.underfilledJsonToast", { expected: expectedMin, actual: generatedQuestions.length }));
       }
 
       await goToPreview();
@@ -646,37 +720,37 @@ export function openPdfQcmModal(username, uid) {
       <div class="qcm-preview-q" data-idx="${i}">
         <div class="qcm-preview-q-header">
           <span class="qcm-preview-q-num">Q${i + 1}</span>
-          <span class="q-category pdf-editable" data-idx="${i}" data-field="cat" title="Cliquer pour modifier">${escHtml(q.cat || "")}</span>
-          <button type="button" class="btn-delete-qcm pdf-q-remove" data-idx="${i}" title="Supprimer">🗑️</button>
+          <span class="q-category pdf-editable" data-idx="${i}" data-field="cat" title="${t("pdfQcm.clickToEditTitle")}">${escHtml(q.cat || "")}</span>
+          <button type="button" class="btn-delete-qcm pdf-q-remove" data-idx="${i}" title="${t("common.deleteTitle")}">🗑️</button>
         </div>
-        <div class="qcm-preview-q-text pdf-editable" data-idx="${i}" data-field="q" title="Cliquer pour modifier">${renderLatexHtml(q.q, { latexEnabled })}</div>
+        <div class="qcm-preview-q-text pdf-editable" data-idx="${i}" data-field="q" title="${t("pdfQcm.clickToEditTitle")}">${renderLatexHtml(q.q, { latexEnabled })}</div>
         <div class="qcm-preview-q-opts">
           ${q.opts.map((o, j) => `
             <div class="qcm-preview-opt${getCorrectAnswerIndices(q).includes(j) ? " correct" : ""}">
               <span class="option-letter">${letters[j]}</span>
-              <span class="option-text pdf-editable" data-idx="${i}" data-field="opt" data-opt="${j}" title="Cliquer pour modifier">${renderLatexHtml(o, { latexEnabled })}</span>
+              <span class="option-text pdf-editable" data-idx="${i}" data-field="opt" data-opt="${j}" title="${t("pdfQcm.clickToEditTitle")}">${renderLatexHtml(o, { latexEnabled })}</span>
             </div>
           `).join("")}
         </div>
-        <div class="qcm-preview-exp pdf-editable${q.exp ? "" : " qcm-preview-exp-empty"}" data-idx="${i}" data-field="exp" title="Cliquer pour modifier">${q.exp ? `💡 ${renderLatexHtml(q.exp, { latexEnabled })}` : "+ Ajouter une explication"}</div>
+        <div class="qcm-preview-exp pdf-editable${q.exp ? "" : " qcm-preview-exp-empty"}" data-idx="${i}" data-field="exp" title="${t("pdfQcm.clickToEditTitle")}">${q.exp ? `💡 ${renderLatexHtml(q.exp, { latexEnabled })}` : t("pdfQcm.addExplanationPlaceholder")}</div>
 
         <div class="pdf-tweak-row">
-          <input type="text" class="pdf-tweak-input" data-idx="${i}" placeholder="Tweak : ex: 'rends-la plus difficile', 'corrige la formulation'...">
-          <button type="button" class="btn secondary sm pdf-tweak-btn" data-idx="${i}">${isManual ? "📋 Prompt de tweak" : "🔄 Tweaker"}</button>
+          <input type="text" class="pdf-tweak-input" data-idx="${i}" placeholder="${t("pdfQcm.tweakInputPlaceholder")}">
+          <button type="button" class="btn secondary sm pdf-tweak-btn" data-idx="${i}">${isManual ? t("pdfQcm.tweakPromptBtn") : t("pdfQcm.tweakBtn")}</button>
         </div>
         <div class="error-msg pdf-tweak-error" data-idx="${i}" style="display:none"></div>
 
         ${manualTweakPanel?.idx === i ? `
           <div class="pdf-manual-tweak-panel" data-idx="${i}">
-            <label>Prompt à copier-coller dans ton LLM</label>
+            <label>${t("pdfQcm.manualPromptLabel")}</label>
             <textarea class="qcm-textarea pdf-manual-tweak-prompt" rows="5" readonly>${escHtml(manualTweakPanel.prompt)}</textarea>
-            <button type="button" class="btn secondary sm pdf-manual-tweak-copy" data-idx="${i}">📋 Copier</button>
-            <label>Réponse JSON du modèle</label>
+            <button type="button" class="btn secondary sm pdf-manual-tweak-copy" data-idx="${i}">${t("pdfQcm.copyBtn")}</button>
+            <label>${t("pdfQcm.manualJsonLabel")}</label>
             <textarea class="qcm-textarea pdf-manual-tweak-json" data-idx="${i}" rows="4" placeholder='{"question": {...}}'></textarea>
             <div class="error-msg pdf-manual-tweak-error" data-idx="${i}" style="display:none"></div>
             <div class="pdf-manual-tweak-actions">
-              <button type="button" class="btn secondary sm pdf-manual-tweak-cancel" data-idx="${i}">Annuler</button>
-              <button type="button" class="btn sm pdf-manual-tweak-apply" data-idx="${i}">📥 Importer →</button>
+              <button type="button" class="btn secondary sm pdf-manual-tweak-cancel" data-idx="${i}">${t("common.cancelBtn")}</button>
+              <button type="button" class="btn sm pdf-manual-tweak-apply" data-idx="${i}">${t("pdfQcm.importBtn")}</button>
             </div>
           </div>
         ` : ""}
@@ -698,7 +772,7 @@ export function openPdfQcmModal(username, uid) {
     el.querySelectorAll(".pdf-manual-tweak-copy").forEach(btn => {
       btn.onclick = async () => {
         const ok = await copyToClipboard(manualTweakPanel?.prompt || "");
-        toast(ok ? "📋 Prompt copié !" : "❌ Copie impossible, sélectionne le texte manuellement");
+        toast(ok ? t("pdfQcm.promptCopiedToast") : t("pdfQcm.copyFailedToast"));
       };
     });
 
@@ -756,7 +830,7 @@ export function openPdfQcmModal(username, uid) {
         // "q" et "opt" sont obligatoires : un champ vidé par erreur ne doit pas
         // casser la question, on garde l'ancienne valeur dans ce cas.
         if ((field === "q" || field === "opt") && !newValue) {
-          toast("⚠️ Ce champ ne peut pas être vide, modification annulée");
+          toast(t("pdfQcm.fieldCannotBeEmpty"));
         } else if (field === "cat") q.cat = newValue;
         else if (field === "q") q.q = newValue;
         else if (field === "opt") q.opts[optIdx] = newValue;
@@ -787,7 +861,7 @@ export function openPdfQcmModal(username, uid) {
 
     const instruction = input.value.trim();
     if (!instruction) {
-      errEl.textContent = "Décris ce que tu veux changer sur cette question";
+      errEl.textContent = t("pdfQcm.describeChangeError");
       errEl.style.display = "block";
       return;
     }
@@ -811,7 +885,7 @@ export function openPdfQcmModal(username, uid) {
 
     const raw = jsonInput.value.trim();
     if (!raw) {
-      errEl.textContent = "Colle la réponse JSON du modèle avant d'importer";
+      errEl.textContent = t("pdfQcm.pasteJsonBeforeImport");
       errEl.style.display = "block";
       return;
     }
@@ -821,7 +895,7 @@ export function openPdfQcmModal(username, uid) {
       manualTweakPanel = null;
       if (latexEnabled) await ensureKatexReady();
       renderPreview();
-      toast("✅ Question mise à jour");
+      toast(t("pdfQcm.questionUpdatedToast"));
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = "block";
@@ -836,7 +910,7 @@ export function openPdfQcmModal(username, uid) {
 
     const instruction = input.value.trim();
     if (!instruction) {
-      errEl.textContent = "Décris ce que tu veux changer sur cette question";
+      errEl.textContent = t("pdfQcm.describeChangeError");
       errEl.style.display = "block";
       return;
     }
@@ -845,12 +919,14 @@ export function openPdfQcmModal(username, uid) {
     btn.textContent = "⏳...";
 
     try {
+      const tweakPdfParts = lastPdfParts.length && nativePdfSupported() ? lastPdfParts : null;
       const tweakPrompt = buildTweakPrompt({
         sourceText: lastSourceText,
         question: generatedQuestions[idx],
         tweakInstruction: instruction,
         language: document.getElementById("pdf-language")?.value || "fr",
-        latexEnabled
+        latexEnabled,
+        sourceAttachedSeparately: !!tweakPdfParts
       });
 
       let rawResponse;
@@ -860,25 +936,26 @@ export function openPdfQcmModal(username, uid) {
           rawResponse = await callWithAutoFallback({ uid, username, systemPrompt: tweakPrompt, maxTokens: 1024, jsonMode: true });
         } else {
           const [sharedProvider, ownerUid] = picked.split("::");
-          rawResponse = await callSharedKey({ ownerUid, provider: sharedProvider, systemPrompt: tweakPrompt, maxTokens: 1024, jsonMode: true });
+          rawResponse = await callSharedKey({ ownerUid, provider: sharedProvider, systemPrompt: tweakPrompt, maxTokens: 1024, jsonMode: true, pdfParts: tweakPdfParts });
         }
       } else {
         rawResponse = await callProvider({
           systemPrompt: tweakPrompt,
           provider: currentProvider,
           providerSettings: await currentProviderSettings(),
-          maxTokens: 1024
+          maxTokens: 1024,
+          pdfParts: tweakPdfParts
         });
       }
 
       generatedQuestions[idx] = parseAndValidateSingleQuestion(rawResponse);
       if (latexEnabled) await ensureKatexReady();
       renderPreview();
-      toast("✅ Question mise à jour");
+      toast(t("pdfQcm.questionUpdatedToast"));
     } catch (e) {
       renderErrorWithRaw(errEl, e);
       btn.disabled = false;
-      btn.textContent = "🔄 Tweaker";
+      btn.textContent = t("pdfQcm.tweakBtn");
     }
   }
 
@@ -893,19 +970,19 @@ export function openPdfQcmModal(username, uid) {
     errEl.style.display = "none";
 
     if (!title) {
-      errEl.textContent = "Donne un titre à ton QCM";
+      errEl.textContent = t("qcmCreator.giveTitleError");
       errEl.style.display = "block";
       return;
     }
     if (generatedQuestions.length === 0) {
-      errEl.textContent = "Il ne reste plus aucune question à sauvegarder";
+      errEl.textContent = t("pdfQcm.noQuestionsLeftError");
       errEl.style.display = "block";
       return;
     }
 
     const btn = document.getElementById("pdf-save-btn");
     btn.disabled = true;
-    btn.textContent = "⏳ Sauvegarde...";
+    btn.textContent = t("qcmCreator.savingBtn");
 
     try {
       const examDateRaw = document.getElementById("pdf-exam-date").value;
@@ -920,7 +997,7 @@ export function openPdfQcmModal(username, uid) {
         examDate,
         latex: latexEnabled
       });
-      toast("✅ QCM sauvegardé !");
+      toast(t("qcmCreator.savedToast"));
       modal.remove();
       import("../ui/home.js").then(m => m.renderCustomQcms(username, uid));
     } catch (e) {
@@ -928,7 +1005,7 @@ export function openPdfQcmModal(username, uid) {
       errEl.style.display = "block";
     } finally {
       btn.disabled = false;
-      btn.textContent = "💾 Sauvegarder";
+      btn.textContent = t("qcmCreator.saveBtn");
     }
   };
 }
@@ -943,10 +1020,10 @@ function renderErrorWithRaw(errEl, error) {
     return;
   }
 
-  const truncated = raw.length > 4000 ? raw.slice(0, 4000) + "\n[...tronqué...]" : raw;
+  const truncated = raw.length > 4000 ? raw.slice(0, 4000) + t("pdfQcm.truncatedSuffix") : raw;
   errEl.innerHTML = `
     <div>${escHtml(error.message)}</div>
-    <button type="button" class="pdf-raw-toggle-btn">🔍 Voir la réponse brute du modèle</button>
+    <button type="button" class="pdf-raw-toggle-btn">${t("pdfQcm.viewRawResponseBtn")}</button>
     <textarea class="qcm-textarea pdf-raw-response-box" rows="8" readonly style="display:none; margin-top:.5rem">${escHtml(truncated)}</textarea>
   `;
   errEl.style.display = "block";
@@ -956,7 +1033,7 @@ function renderErrorWithRaw(errEl, error) {
   toggleBtn.onclick = () => {
     const isHidden = box.style.display === "none";
     box.style.display = isHidden ? "block" : "none";
-    toggleBtn.textContent = isHidden ? "🔍 Masquer la réponse brute" : "🔍 Voir la réponse brute du modèle";
+    toggleBtn.textContent = isHidden ? t("pdfQcm.hideRawResponseBtn") : t("pdfQcm.viewRawResponseBtn");
   };
 }
 

@@ -8,6 +8,7 @@
 import { callProvider, loadProviderSettings } from "./qcmProviders.js";
 import { isVaultUnlocked, getConfiguredProviders, getApiKey, hasAnyApiKey } from "./apiKeyVault.js";
 import { listSharersForProvider, hasAnySharedKeyAvailable, ALL_PROVIDERS } from "./sharedKeyVault.js";
+import { t } from "../core/i18n.js";
 
 // Vrai si l'utilisateur a de quoi utiliser l'IA sans passer par la clé
 // admin/allowlist : sa propre clé, OU une clé qu'un autre utilisateur lui a
@@ -33,20 +34,20 @@ function proxyBase() {
 // ici : le Worker la déchiffre et fait l'appel IA lui-même (voir
 // proxy/cloudflare-giphy-worker.js → handleUseSharedKey), on ne récupère que
 // le texte final.
-export async function callSharedKey({ ownerUid, provider, systemPrompt, maxTokens = 4096, jsonMode = true, model }) {
+export async function callSharedKey({ ownerUid, provider, systemPrompt, maxTokens = 4096, jsonMode = true, model, pdfParts = null }) {
   const base = proxyBase();
-  if (!base) throw new Error("URL du proxy non configurée (window.__GIPHY_PROXY_URL)");
+  if (!base) throw new Error(t("qcmCreator.proxyNotConfigured"));
   const token = localStorage.getItem("qcm_auth_token") || "";
 
   const res = await fetch(`${base}/use-shared-key`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
-    body: JSON.stringify({ ownerUid, provider, systemPrompt, maxTokens, jsonMode, model })
+    body: JSON.stringify({ ownerUid, provider, systemPrompt, maxTokens, jsonMode, model, pdfParts: pdfParts || undefined })
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-  if (!data.text) throw new Error("Réponse vide");
+  if (!res.ok) throw new Error(data.error || t("qcmCreator.httpError", { status: res.status }));
+  if (!data.text) throw new Error(t("aiKeyOrchestrator.emptyResponse"));
   return data.text;
 }
 
@@ -89,7 +90,7 @@ export async function callWithAutoFallback({ uid, username, systemPrompt, maxTok
         const providerSettings = { ...settings, [p.settingsKey]: { ...settings[p.settingsKey], apiKey } };
         return await callProvider({ systemPrompt, provider: p.dispatch, providerSettings, maxTokens, jsonMode });
       } catch (e) {
-        errors.push(`${p.vaultKey} (ma clé) : ${e.message}`);
+        errors.push(t("aiKeyOrchestrator.ownKeyErrorEntry", { vaultKey: p.vaultKey, message: e.message }));
       }
     }
   }
@@ -100,14 +101,14 @@ export async function callWithAutoFallback({ uid, username, systemPrompt, maxTok
       try {
         return await callSharedKey({ ownerUid: sharer.ownerUid, provider, systemPrompt, maxTokens, jsonMode });
       } catch (e) {
-        errors.push(`${provider} (partagée par ${sharer.sharedBy}) : ${e.message}`);
+        errors.push(t("aiKeyOrchestrator.sharedKeyErrorEntry", { provider, sharedBy: sharer.sharedBy, message: e.message }));
       }
     }
   }
 
   throw new Error(
     errors.length
-      ? `Toutes les clés disponibles ont échoué — ${errors.join(" · ")}`
-      : "Aucune clé personnelle ou partagée disponible."
+      ? t("aiKeyOrchestrator.allKeysFailed", { errors: errors.join(" · ") })
+      : t("aiKeyOrchestrator.noKeyAvailable")
   );
 }

@@ -16,6 +16,7 @@ import { openApiKeysPanel } from "../ai/apiKeySettingsPanel.js";
 import { listAllSharedEntries, unshareApiKey } from "../ai/sharedKeyVault.js";
 import { renderLatexHtml } from "../core/latex.js";
 import { loadCustomQcmPickerInto } from "./customQcmPicker.js";
+import { t, getLang, onLanguageChange } from "../core/i18n.js";
 import {
   createRoom,
   joinRoom,
@@ -26,10 +27,13 @@ import {
   leaveRoom
 } from "../data-access/room.js";
 
-const calendarMonthFormatter = new Intl.DateTimeFormat("fr-FR", {
-  month: "long",
-  year: "numeric"
-});
+const CALENDAR_LOCALES = { fr: "fr-FR", en: "en-US", zh: "zh-CN" };
+function getCalendarMonthFormatter() {
+  return new Intl.DateTimeFormat(CALENDAR_LOCALES[getLang()] || "fr-FR", {
+    month: "long",
+    year: "numeric"
+  });
+}
 
 let examCalendarMonthOffset = 0;
 let homeRefreshTimer = null;
@@ -37,6 +41,27 @@ let homeRefreshTimer = null;
 // renderCustomQcms (déjà en train de les charger pour la grille de cartes),
 // réutilisé ici pour éviter un second appel Firestore. Vide pour les invités.
 let calendarCustomQcms = [];
+
+// Rejoue le dernier rendu connu de chaque section dynamique de l'accueil
+// quand la langue change en cours de session (les data-i18n statiques sont
+// déjà gérés par applyStaticTranslations, mais tout ce qui est généré en JS
+// — calendrier, salons, utilisateurs en ligne — a besoin d'un re-rendu explicite).
+let lastRenderHomeArgs = null;
+let lastOnlineUsers = null;
+let lastRoomsList = null;
+
+function isHomeScreenActive() {
+  return document.getElementById("home-screen")?.classList.contains("active") === true;
+}
+
+onLanguageChange(() => {
+  if (!isHomeScreenActive()) return;
+  if (lastRenderHomeArgs) {
+    renderHome(lastRenderHomeArgs.username, lastRenderHomeArgs.isGuest, lastRenderHomeArgs.uid);
+  }
+  if (lastOnlineUsers) renderOnlineUsers(lastOnlineUsers);
+  if (lastRoomsList) renderRoomsPanel(lastRoomsList);
+});
 
 function formatDateDDMMYYYY(date) {
   const day = String(date.getDate()).padStart(2, "0");
@@ -82,10 +107,11 @@ function formatCalendarDayLabel(date) {
 
 function formatExamDateChip(dateValue) {
   const date = parseExamDateValue(dateValue);
-  return date ? formatDateDDMMYYYY(date) : "Aucune date";
+  return date ? formatDateDDMMYYYY(date) : t("home.noExamDate");
 }
 
 function getSortedActiveSubjects(subjects) {
+  const locale = CALENDAR_LOCALES[getLang()] || "fr-FR";
   return [...subjects].sort((left, right) => {
     const leftDate = parseExamDateValue(getSubjectExamDate(left.id));
     const rightDate = parseExamDateValue(getSubjectExamDate(right.id));
@@ -93,12 +119,12 @@ function getSortedActiveSubjects(subjects) {
     if (leftDate && rightDate) {
       const diff = leftDate.getTime() - rightDate.getTime();
       if (diff !== 0) return diff;
-      return left.name.localeCompare(right.name, "fr-FR");
+      return left.name.localeCompare(right.name, locale);
     }
 
     if (leftDate && !rightDate) return -1;
     if (!leftDate && rightDate) return 1;
-    return left.name.localeCompare(right.name, "fr-FR");
+    return left.name.localeCompare(right.name, locale);
   });
 }
 
@@ -106,9 +132,9 @@ function getSubjectExamStatus(subject) {
   const examDateValue = getSubjectExamDate(subject.id);
   if (!examDateValue) {
     return {
-      label: "Aucune date",
+      label: t("home.noExamDate"),
       tone: "neutral",
-      detail: "à planifier"
+      detail: t("home.toSchedule")
     };
   }
 
@@ -116,9 +142,9 @@ function getSubjectExamStatus(subject) {
   const archived = examDate ? isSubjectArchivedByDate(subject) : false;
 
   return {
-    label: archived ? "Archivé automatiquement" : `Exam ${formatExamDateChip(examDateValue)}`,
+    label: archived ? t("home.autoArchived") : t("home.examOn", { date: formatExamDateChip(examDateValue) }),
     tone: archived ? "danger" : "highlight",
-    detail: archived ? "le lendemain de l'examen" : "visible dans le calendrier"
+    detail: archived ? t("home.dayAfterExam") : t("home.visibleInCalendar")
   };
 }
 
@@ -159,7 +185,7 @@ function openCalendarSubjectModePicker(subjectId) {
       </div>
       <div class="picker-target" style="margin-bottom: .9rem;">
         <div>
-          <div class="picker-target-sub">Choisis un mode pour lancer le quiz directement</div>
+          <div class="picker-target-sub">${t("home.chooseModeHint")}</div>
         </div>
       </div>
       <div class="picker-modes">
@@ -191,12 +217,12 @@ function openCalendarCustomQcm(id) {
   const qs = Array.isArray(qcm.questions) ? qcm.questions : [];
   const subject = {
     id: `custom_${qcm.id}`,
-    name: qcm.title || "QCM personnalisé",
+    name: qcm.title || t("home.customQcmFallbackTitle"),
     icon: "✨",
-    description: `QCM généré par ${qcm.createdBy}`,
+    description: t("home.qcmGeneratedBy", { author: qcm.createdBy }),
     latex: qcm.latex !== false,
     questions: qs,
-    modes: [{ label: `Quiz · ${qs.length} Q`, count: qs.length, timed: false }]
+    modes: [{ label: t("home.quizModeLabel", { count: qs.length }), count: qs.length, timed: false }]
   };
 
   if (!startQuiz(subject, qs.length, false, null)) return;
@@ -235,7 +261,7 @@ function buildCalendarEntries(subjects, customQcms) {
         kind: "custom",
         id: qcm.id,
         icon: "✨",
-        name: qcm.title || "QCM personnalisé",
+        name: qcm.title || t("home.customQcmFallbackTitle"),
         examDate,
         examDateValue: qcm.examDate,
         dateKey: toDateKey(examDate),
@@ -261,7 +287,7 @@ function renderExamCalendar(entries) {
   });
 
   const gridStart = getCalendarStart(monthDate);
-  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const dayNames = t("home.calendarDayNames").split(",");
   const cells = [];
   const cursor = new Date(gridStart);
 
@@ -275,7 +301,7 @@ function renderExamCalendar(entries) {
       <div class="exam-calendar-day ${inMonth ? "in-month" : "out-month"} ${isToday ? "today" : ""} ${entries.length ? "has-exam" : ""}">
         <div class="exam-calendar-day-head">
           <span class="exam-calendar-day-number">${cursor.getDate()}</span>
-          ${isToday ? `<span class="exam-calendar-day-pill">Aujourd'hui</span>` : ""}
+          ${isToday ? `<span class="exam-calendar-day-pill">${t("common.today")}</span>` : ""}
         </div>
         <div class="exam-calendar-events">
           ${entries.length ? entries.map(entry => `
@@ -300,13 +326,13 @@ function renderExamCalendar(entries) {
     <section class="exam-calendar-card">
       <div class="exam-calendar-header">
         <div>
-          <div class="exam-calendar-kicker">Calendrier des examens</div>
-          <h2>${calendarMonthFormatter.format(monthDate)}</h2>
-          <p>Survole ou navigue dans les mois pour repérer les dates clés. Les sujets passent en archive le lendemain de leur examen.</p>
+          <div class="exam-calendar-kicker">${t("home.calendarKicker")}</div>
+          <h2>${getCalendarMonthFormatter().format(monthDate)}</h2>
+          <p>${t("home.calendarHint")}</p>
         </div>
         <div class="exam-calendar-controls">
           <button class="exam-calendar-nav" type="button" onclick="window.__shiftExamCalendar(-1)">←</button>
-          <button class="exam-calendar-nav secondary" type="button" onclick="window.__shiftExamCalendar(0)">Aujourd'hui</button>
+          <button class="exam-calendar-nav secondary" type="button" onclick="window.__shiftExamCalendar(0)">${t("common.today")}</button>
           <button class="exam-calendar-nav" type="button" onclick="window.__shiftExamCalendar(1)">→</button>
         </div>
       </div>
@@ -318,9 +344,9 @@ function renderExamCalendar(entries) {
       </div>
       <div class="exam-calendar-footer">
         <div class="exam-calendar-legend">
-          <span><i class="legend-dot live"></i> Aujourd'hui</span>
-          <span><i class="legend-dot exam"></i> Date d'examen</span>
-          <span><i class="legend-dot archived"></i> Archivé automatiquement</span>
+          <span><i class="legend-dot live"></i> ${t("common.today")}</span>
+          <span><i class="legend-dot exam"></i> ${t("home.legendExamDate")}</span>
+          <span><i class="legend-dot archived"></i> ${t("home.autoArchived")}</span>
         </div>
         <div class="exam-calendar-upcoming">
           ${upcoming.length ? upcoming.map(entry => `
@@ -328,7 +354,7 @@ function renderExamCalendar(entries) {
               <span>${entry.icon} ${entry.name}</span>
               <strong>${formatCalendarDayLabel(entry.examDate)}</strong>
             </button>
-          `).join("") : `<div class="exam-calendar-upcoming-empty">Ajoute une date sur une matière pour l'afficher ici.</div>`}
+          `).join("") : `<div class="exam-calendar-upcoming-empty">${t("home.addExamDateHint")}</div>`}
         </div>
       </div>
     </section>
@@ -353,7 +379,7 @@ function renderSubjectCard(subject) {
         <span class="subject-icon">${subject.icon}</span>
         <div>
           <h3>${subject.name}</h3>
-          <span class="tag ${subject.tagClass || ""}">${subject.questions.length} questions</span>
+          <span class="tag ${subject.tagClass || ""}">${t("home.questionsCount", { count: subject.questions.length })}</span>
           <span class="tag ${status.tone === "danger" ? "amber" : "cyan"}">${status.label}</span>
         </div>
       </div>
@@ -364,6 +390,7 @@ function renderSubjectCard(subject) {
 }
 
 export function renderHome(username, isGuest = false, uid = null) {
+  lastRenderHomeArgs = { username, isGuest, uid };
   const grid = document.getElementById("subjects-grid");
   const homeScreen = document.getElementById("home-screen");
   const guestWarning = document.getElementById("guest-warning");
@@ -384,12 +411,16 @@ export function renderHome(username, isGuest = false, uid = null) {
   activeSubjects.forEach(s => totalQ += s.questions.length);
   const activeCount = activeSubjects.length;
   const archivedCount = archivedSubjects.length;
-  document.getElementById("home-subtitle").textContent =
-    `// ${totalQ} questions · ${activeCount} module${activeCount > 1 ? "s" : ""}${scheduledCount ? ` · ${scheduledCount} date${scheduledCount > 1 ? "s" : ""} planifiée${scheduledCount > 1 ? "s" : ""}` : ""}${archivedCount ? ` · ${archivedCount} archivé${archivedCount > 1 ? "s" : ""}` : ""}`;
+  document.getElementById("home-subtitle").textContent = t("home.subtitle", {
+    totalQ,
+    activeCount,
+    scheduledPart: scheduledCount ? t("home.subtitleScheduledPart", { count: scheduledCount }) : "",
+    archivedPart: archivedCount ? t("home.subtitleArchivedPart", { count: archivedCount }) : ""
+  });
 
   if (guestWarning) {
     if (isGuest) {
-      guestWarning.textContent = "⚠️ Mode invité: tu es hors-ligne et limité aux QCM par défaut. Crée un compte pour créer tes propres QCM et accéder aux fonctionnalités communautaires.";
+      guestWarning.textContent = t("home.guestWarning");
       guestWarning.style.display = "block";
     } else {
       guestWarning.style.display = "none";
@@ -452,7 +483,7 @@ export function renderHome(username, isGuest = false, uid = null) {
   renderExamCalendar(buildCalendarEntries(SUBJECTS, calendarCustomQcms));
 
   if (!activeSubjects.length) {
-    grid.innerHTML = `<div class="custom-qcms-empty">// Tous les modules sont archivés. Modifie les dates d'examen ou ARCHIVED_SUBJECT_IDS dans js/core/subjects.js pour en réactiver.</div>`;
+    grid.innerHTML = `<div class="custom-qcms-empty">${t("home.allModulesArchived")}</div>`;
   }
 
   const sortedActiveSubjects = getSortedActiveSubjects(activeSubjects);
@@ -466,8 +497,8 @@ export function renderHome(username, isGuest = false, uid = null) {
     section.className = "archived-subjects";
     section.innerHTML = `
       <details>
-        <summary>🗂️ Archives (${archivedSubjects.length})</summary>
-        <div class="archived-subjects-hint">Archive des sujets passés.</div>
+        <summary>${t("home.archivesSectionTitle", { count: archivedSubjects.length })}</summary>
+        <div class="archived-subjects-hint">${t("home.archivedSubjectsHint")}</div>
         <div class="archived-subjects-list">
           ${archivedSubjects.map(subject => `
             <div class="archived-subject-row">
@@ -520,32 +551,29 @@ async function openAiAccessPanel(adminUsername) {
   wrap.innerHTML = `
     <div class="picker-modal" style="width:min(420px,92vw)">
       <div class="picker-modal-header">
-        <h3>🔐 Accès IA</h3>
+        <h3>${t("home.btnAiAccess")}</h3>
         <button class="picker-close" id="ai-access-close">✕</button>
       </div>
       <p style="color:var(--text-dim); font-size:.82rem; margin:-0.5rem 0 1rem; line-height:1.5;">
-        Seul <strong>${escHtml(AI_ADMIN_USERNAME)}</strong> (admin) a accès aux fonctionnalités IA (création de QCM, PDF → QCM, coach IA) par défaut.
-        Ajoute ici les comptes que tu autorises en plus.
+        ${t("home.aiAccessIntro", { admin: escHtml(AI_ADMIN_USERNAME) })}
       </p>
       <div id="ai-access-list" class="picker-subjects" style="max-height:40vh;"></div>
       <div class="field" style="margin-top:1rem;">
-        <label>Ajouter un compte</label>
+        <label>${t("home.addAccountLabel")}</label>
         <div style="display:flex; gap:.5rem;">
-          <input id="ai-access-input" type="text" placeholder="pseudo exact" maxlength="20" autocomplete="off" style="flex:1">
-          <button class="btn sm" id="ai-access-add-btn">Ajouter</button>
+          <input id="ai-access-input" type="text" placeholder="${t("home.exactUsernamePlaceholder")}" maxlength="20" autocomplete="off" style="flex:1">
+          <button class="btn sm" id="ai-access-add-btn">${t("home.addBtn")}</button>
         </div>
       </div>
 
       <hr style="border-color:var(--border); margin:1.2rem 0;">
-      <h3 style="font-size:.95rem; margin-bottom:.4rem;">🌐 Partage de clés entre utilisateurs</h3>
+      <h3 style="font-size:.95rem; margin-bottom:.4rem;">${t("home.keySharingTitle")}</h3>
       <label class="pdf-checkbox-label" style="display:flex; align-items:center; gap:.5rem; margin:.4rem 0; font-size:.85rem;">
         <input type="checkbox" id="ai-open-to-all-toggle">
-        🌍 Rendre l'IA intégrée (clé Gemini de l'admin) accessible à tout le monde, même hors liste
+        ${t("home.openToAllLabel")}
       </label>
       <p style="color:var(--text-dim); font-size:.75rem; margin:0 0 .8rem; line-height:1.5;">
-        Chaque utilisateur choisit librement à qui il partage ses propres clés depuis 🔑 Mes clés IA
-        (à une personne précise, ou à tout le monde) — ceci ne contrôle que la clé intégrée de l'admin.
-        Vue d'ensemble de ce que les utilisateurs partagent actuellement entre eux (modération) :
+        ${t("home.keySharingHint")}
       </p>
       <div id="shared-keys-admin-list" style="max-height:30vh; overflow:auto;"></div>
     </div>
@@ -558,18 +586,18 @@ async function openAiAccessPanel(adminUsername) {
   const listEl = document.getElementById("ai-access-list");
 
   async function refreshList() {
-    listEl.innerHTML = `<div class="picker-custom-loading">// Chargement...</div>`;
+    listEl.innerHTML = `<div class="picker-custom-loading">${t("common.loadingSlash")}</div>`;
     const allowed = await getAllowedAiUsers();
 
     if (!allowed.length) {
-      listEl.innerHTML = `<div class="picker-custom-empty">// Personne d'autre pour l'instant.</div>`;
+      listEl.innerHTML = `<div class="picker-custom-empty">${t("home.noOtherUsersYet")}</div>`;
       return;
     }
 
     listEl.innerHTML = allowed.map(u => `
       <div class="picker-subject-block" style="display:flex; align-items:center; justify-content:space-between; padding:.6rem 1rem;">
         <span>${escHtml(u)}</span>
-        <button class="btn-delete-qcm" data-user="${escAttr(u)}" title="Retirer l'accès IA">🗑️</button>
+        <button class="btn-delete-qcm" data-user="${escAttr(u)}" title="${t("home.removeAiAccessTitle")}">🗑️</button>
       </div>
     `).join("");
 
@@ -577,7 +605,7 @@ async function openAiAccessPanel(adminUsername) {
       btn.onclick = async () => {
         const current = await getAllowedAiUsers();
         await setAllowedAiUsers(current.filter(u => u !== btn.dataset.user), adminUsername);
-        toast(`🔒 Accès IA retiré à ${btn.dataset.user}`);
+        toast(t("home.toastAiAccessRemoved", { user: btn.dataset.user }));
         refreshList();
       };
     });
@@ -589,20 +617,20 @@ async function openAiAccessPanel(adminUsername) {
     if (!newUser) return;
 
     if (isAiAdmin(newUser)) {
-      toast("ℹ️ L'admin a déjà accès par défaut");
+      toast(t("home.toastAdminAlreadyHasAccess"));
       input.value = "";
       return;
     }
 
     const current = await getAllowedAiUsers();
     if (current.includes(newUser)) {
-      toast("ℹ️ Déjà autorisé");
+      toast(t("home.toastAlreadyAllowed"));
       input.value = "";
       return;
     }
 
     await setAllowedAiUsers([...current, newUser], adminUsername);
-    toast(`✅ ${newUser} peut maintenant utiliser l'IA`);
+    toast(t("home.toastUserGrantedAi", { user: newUser }));
     input.value = "";
     refreshList();
   };
@@ -613,11 +641,11 @@ async function openAiAccessPanel(adminUsername) {
     try {
       await setAiOpenToAll(openToAllCheckbox.checked, adminUsername);
       toast(openToAllCheckbox.checked
-        ? "🌍 IA intégrée ouverte à tout le monde"
-        : "🔒 IA intégrée revenue à la liste restreinte");
+        ? t("home.toastOpenToAllOn")
+        : t("home.toastOpenToAllOff"));
     } catch (e) {
       openToAllCheckbox.checked = !openToAllCheckbox.checked;
-      toast(`❌ ${e?.message || "Erreur"}`);
+      toast(`❌ ${e?.message || t("common.genericError")}`);
     } finally {
       openToAllCheckbox.disabled = false;
     }
@@ -627,30 +655,30 @@ async function openAiAccessPanel(adminUsername) {
 
   async function refreshSharedKeysAdminList() {
     const el = document.getElementById("shared-keys-admin-list");
-    el.innerHTML = `<div class="picker-custom-loading">// Chargement...</div>`;
+    el.innerHTML = `<div class="picker-custom-loading">${t("common.loadingSlash")}</div>`;
     const entries = await listAllSharedEntries();
 
     if (!entries.length) {
-      el.innerHTML = `<div class="picker-custom-empty">// Personne ne partage de clé pour l'instant.</div>`;
+      el.innerHTML = `<div class="picker-custom-empty">${t("home.noSharedKeysYet")}</div>`;
       return;
     }
 
     el.innerHTML = entries.map(e => `
       <div class="picker-subject-block" style="display:flex; align-items:center; justify-content:space-between; padding:.5rem 1rem; gap:.5rem;">
         <span style="font-size:.8rem; line-height:1.4;">
-          ${SHARE_ICONS[e.provider] || ""} <strong>${escHtml(e.provider)}</strong> — partagée par ${escHtml(e.sharedBy)}
-          ${e.public ? ` <span class="tag cyan">🌍 public</span>` : ""}
-          ${e.allowedUsernames.length ? ` <span style="color:var(--text-dim);">avec ${escHtml(e.allowedUsernames.join(", "))}</span>` : (e.public ? "" : ` <span style="color:var(--text-dim);">(personne)</span>`)}
+          ${SHARE_ICONS[e.provider] || ""} <strong>${escHtml(e.provider)}</strong>${t("home.sharedByLabel", { user: escHtml(e.sharedBy) })}
+          ${e.public ? ` <span class="tag cyan">${t("home.publicTag")}</span>` : ""}
+          ${e.allowedUsernames.length ? ` <span style="color:var(--text-dim);">${t("home.sharedWithLabel", { users: escHtml(e.allowedUsernames.join(", ")) })}</span>` : (e.public ? "" : ` <span style="color:var(--text-dim);">${t("home.sharedWithNobody")}</span>`)}
         </span>
-        <button class="btn-delete-qcm" data-owner="${escAttr(e.ownerUid)}" data-provider="${escAttr(e.provider)}" title="Forcer le retrait de ce partage">🗑️</button>
+        <button class="btn-delete-qcm" data-owner="${escAttr(e.ownerUid)}" data-provider="${escAttr(e.provider)}" title="${t("home.forceRevokeTitle")}">🗑️</button>
       </div>
     `).join("");
 
     el.querySelectorAll("button[data-owner]").forEach(btn => {
       btn.onclick = async () => {
-        if (!confirm("Forcer le retrait de ce partage ?")) return;
+        if (!confirm(t("home.confirmForceRevoke"))) return;
         await unshareApiKey(btn.dataset.owner, btn.dataset.provider);
-        toast("🗑️ Partage retiré");
+        toast(t("home.toastShareRevoked"));
         refreshSharedKeysAdminList();
       };
     });
@@ -667,7 +695,7 @@ export async function renderCustomQcms(username, uid = null) {
   const section = document.getElementById("custom-qcms-section");
   if (!section) return;
 
-  section.innerHTML = `<div class="custom-qcms-loading">// Chargement des QCM...</div>`;
+  section.innerHTML = `<div class="custom-qcms-loading">${t("home.loadingQcms")}</div>`;
 
   try {
     const isAdmin = isAiAdmin(username);
@@ -706,7 +734,7 @@ export async function renderCustomQcms(username, uid = null) {
     if (userQcms.length > 0) {
       html += `
         <div class="custom-qcms-block">
-          <div class="custom-qcms-header">📚 Mes QCM <span class="custom-qcms-count">${userQcms.length}</span></div>
+          <div class="custom-qcms-header">${t("home.myQcmsHeader")} <span class="custom-qcms-count">${userQcms.length}</span></div>
           <div class="custom-qcms-grid">
             ${userQcms.map(q => renderCustomQcmCard(q, username)).join("")}
           </div>
@@ -716,7 +744,7 @@ export async function renderCustomQcms(username, uid = null) {
     if (communityQcms.length > 0) {
       html += `
         <div class="custom-qcms-block">
-          <div class="custom-qcms-header">🌐 Communauté <span class="custom-qcms-count">${communityQcms.length}</span></div>
+          <div class="custom-qcms-header">${t("home.communityHeader")} <span class="custom-qcms-count">${communityQcms.length}</span></div>
           <div class="custom-qcms-grid">
             ${communityQcms.map(q => renderCustomQcmCard(q, username)).join("")}
           </div>
@@ -727,7 +755,7 @@ export async function renderCustomQcms(username, uid = null) {
       const adminOnly = allQcms.filter(q => q.createdBy !== username);
       html += `
         <div class="custom-qcms-block">
-          <div class="custom-qcms-header">🛡️ Admin · Tous les QCM (privés inclus) <span class="custom-qcms-count">${adminOnly.length}</span></div>
+          <div class="custom-qcms-header">${t("home.adminAllQcmsHeader")} <span class="custom-qcms-count">${adminOnly.length}</span></div>
           <div class="custom-qcms-grid">
             ${adminOnly.map(q => renderCustomQcmCard(q, username)).join("")}
           </div>
@@ -735,7 +763,7 @@ export async function renderCustomQcms(username, uid = null) {
     }
 
     if (!html) {
-      html = `<div class="custom-qcms-empty">// Aucun QCM pour l'instant — crée le premier !</div>`;
+      html = `<div class="custom-qcms-empty">${t("home.noQcmsYet")}</div>`;
     }
 
     section.innerHTML = html;
@@ -745,10 +773,10 @@ export async function renderCustomQcms(username, uid = null) {
       btn.onclick = async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
-        if (!confirm("Supprimer ce QCM ?")) return;
+        if (!confirm(t("home.confirmDeleteQcm"))) return;
         try {
           await deleteCustomQcm(id, username, uid);
-          toast("🗑️ QCM supprimé");
+          toast(t("home.toastQcmDeleted"));
           renderCustomQcms(username, uid);
         } catch (err) {
           toast("❌ " + err.message);
@@ -790,10 +818,10 @@ export async function renderCustomQcms(username, uid = null) {
           id:          `custom_${id}`,
           name:        title,
           icon:        "✨",
-          description: `QCM généré par ${btn.dataset.author}`,
+          description: t("home.qcmGeneratedBy", { author: btn.dataset.author }),
           latex:       btn.dataset.latex === "true",
           questions:   qs,
-          modes:       [{ label: `Quiz · ${qs.length} Q`, count: qs.length, timed: false }]
+          modes:       [{ label: t("home.quizModeLabel", { count: qs.length }), count: qs.length, timed: false }]
         };
         if (!startQuiz(subject, qs.length, false, null)) return;
         showScreen("quiz-screen");
@@ -802,7 +830,7 @@ export async function renderCustomQcms(username, uid = null) {
 
   } catch (err) {
     console.error("renderCustomQcms error:", err);
-    section.innerHTML = `<div class="custom-qcms-empty">// Erreur de chargement</div>`;
+    section.innerHTML = `<div class="custom-qcms-empty">${t("common.loadError")}</div>`;
   }
 }
 
@@ -810,9 +838,9 @@ function renderCustomQcmCard(qcm, currentUser) {
   const isAdmin = isAiAdmin(currentUser);
   const isOwner = qcm.createdBy === currentUser;
   const canEdit = isOwner || isAdmin;
-  const vis     = qcm.isPublic ? "🌐 Public" : "🔒 Privé";
+  const vis     = qcm.isPublic ? t("home.qcmPublic") : t("home.qcmPrivate");
   const latexEnabled  = qcm.latex !== false;
-  const safeTitle     = renderLatexHtml(qcm.title || "Sans titre", { latexEnabled });
+  const safeTitle     = renderLatexHtml(qcm.title || t("home.untitled"), { latexEnabled });
   const safeAuthor    = escHtml(qcm.createdBy || "?");
   const safeQuestions = escAttr(JSON.stringify(qcm.questions || []));
   const count         = (qcm.questions || []).length;
@@ -823,16 +851,16 @@ function renderCustomQcmCard(qcm, currentUser) {
       <div class="custom-qcm-card-header">
         <div>
           <h3>${safeTitle}</h3>
-          <span class="tag cyan">${count} questions</span>
+          <span class="tag cyan">${t("home.questionsCount", { count })}</span>
           <span class="tag">${vis}</span>
-          ${examDate ? `<span class="tag amber">Exam ${formatCalendarDayLabel(examDate)}</span>` : ""}
+          ${examDate ? `<span class="tag amber">${t("home.examOn", { date: formatCalendarDayLabel(examDate) })}</span>` : ""}
         </div>
         <div style="display:flex; gap:.45rem; align-items:center">
-          ${canEdit ? `<button class="btn-delete-qcm btn-edit-qcm" data-id="${qcm.id}" data-title="${escAttr(qcm.title || "")}" data-author="${escAttr(qcm.createdBy || "")}" data-public="${qcm.isPublic ? "true" : "false"}" data-examdate="${escAttr(qcm.examDate || "")}" data-latex="${latexEnabled ? "true" : "false"}" data-questions="${safeQuestions}" title="Modifier">✏️</button>` : ""}
-          ${canEdit ? `<button class="btn-delete-qcm" data-id="${qcm.id}" title="Supprimer">🗑️</button>` : ""}
+          ${canEdit ? `<button class="btn-delete-qcm btn-edit-qcm" data-id="${qcm.id}" data-title="${escAttr(qcm.title || "")}" data-author="${escAttr(qcm.createdBy || "")}" data-public="${qcm.isPublic ? "true" : "false"}" data-examdate="${escAttr(qcm.examDate || "")}" data-latex="${latexEnabled ? "true" : "false"}" data-questions="${safeQuestions}" title="${t("common.editTitle")}">✏️</button>` : ""}
+          ${canEdit ? `<button class="btn-delete-qcm" data-id="${qcm.id}" title="${t("common.deleteTitle")}">🗑️</button>` : ""}
         </div>
       </div>
-      <p class="custom-qcm-author">// par ${safeAuthor}</p>
+      <p class="custom-qcm-author">${t("home.byAuthor", { author: safeAuthor })}</p>
       <div class="mode-buttons">
         <button class="mode-btn btn-play-custom-qcm"
           data-id="${qcm.id}"
@@ -840,7 +868,7 @@ function renderCustomQcmCard(qcm, currentUser) {
           data-author="${escAttr(qcm.createdBy || "")}"
           data-latex="${latexEnabled ? "true" : "false"}"
           data-questions="${safeQuestions}">
-          ▶ Jouer · ${count} Q
+          ${t("home.playQuizBtn", { count })}
         </button>
       </div>
     </div>
@@ -861,6 +889,7 @@ function escAttr(s) {
 
 // ── PANNEAU UTILISATEURS EN LIGNE ────────────────────────────────────────────
 export function renderOnlineUsers(users) {
+  lastOnlineUsers = users;
   const panel = document.getElementById("online-panel");
   if (!panel) return;
 
@@ -882,9 +911,9 @@ export function renderOnlineUsers(users) {
   if (!entries.length) {
     panel.innerHTML = `
       <div class="online-header">
-        <span class="online-dot"></span> En ligne
+        <span class="online-dot"></span> ${t("home.onlineLabelPlain")}
       </div>
-      <div class="online-empty">// Personne d'autre en ligne pour l'instant</div>
+      <div class="online-empty">${t("home.noOneElseOnline")}</div>
     `;
     return;
   }
@@ -894,19 +923,19 @@ export function renderOnlineUsers(users) {
 
   panel.innerHTML = `
     <div class="online-header">
-      <span class="online-dot"></span> Connectés · ${entries.length}
-      <span class="online-header-breakdown">• En ligne ${onlineCount} • En quiz ${playingCount}</span>
+      <span class="online-dot"></span> ${t("home.connectedCount", { count: entries.length })}
+      <span class="online-header-breakdown">${t("home.onlineBreakdown", { onlineCount, playingCount })}</span>
     </div>
     <div class="online-users-list">
       ${entries.map(u => {
         const isPlaying = u.status === "playing";
-        const statusLabel = isPlaying ? "🎯 En QCM" : "🟢 En ligne";
+        const statusLabel = isPlaying ? t("home.statusInQuiz") : t("home.statusOnlineBadge");
         return `
         <div class="online-user-chip">
           <div class="online-avatar">${u.pseudo[0].toUpperCase()}</div>
           <span class="online-name">${u.pseudo}</span>
           <span class="online-status-badge ${isPlaying ? "playing" : "online"}">${statusLabel}</span>
-          <button class="btn-challenge ${isPlaying ? "disabled" : ""}" ${isPlaying ? "disabled" : ""} onclick="window.__openPicker('${u.pseudo}')">${isPlaying ? "Occupé" : "⚔️ Défier"}</button>
+          <button class="btn-challenge ${isPlaying ? "disabled" : ""}" ${isPlaying ? "disabled" : ""} onclick="window.__openPicker('${u.pseudo}')">${isPlaying ? t("home.busyLabel") : t("home.challengeBtn")}</button>
         </div>
       `;
       }).join("")}
@@ -942,7 +971,7 @@ export function renderOnlineUsers(users) {
     const archivedSubjects = getArchivedSubjects();
     const archivedHtml = archivedSubjects.length ? `
       <details class="picker-archived-details">
-        <summary>🗂️ Archivés (${archivedSubjects.length})</summary>
+        <summary>${t("home.archivedListTitle", { count: archivedSubjects.length })}</summary>
         <div class="picker-archived-list">${archivedSubjects.map(renderSubjectBlock).join("")}</div>
       </details>
     ` : "";
@@ -950,22 +979,22 @@ export function renderOnlineUsers(users) {
     wrap.innerHTML = `
       <div class="picker-modal">
         <div class="picker-modal-header">
-          <h3>⚔️ Lancer un défi</h3>
+          <h3>${t("home.challengeModalTitle")}</h3>
           <button class="picker-close" onclick="document.getElementById('picker-modal-wrap').remove()">✕</button>
         </div>
         <div class="picker-target">
           <div class="picker-target-avatar">${targetPseudo[0].toUpperCase()}</div>
           <div>
             <div class="picker-target-name">${targetPseudo}</div>
-            <div class="picker-target-sub">Choisir le mode de jeu</div>
+            <div class="picker-target-sub">${t("home.chooseGameModeHint")}</div>
           </div>
         </div>
         <div class="picker-subjects">${subjects}</div>
         ${archivedHtml}
         <div class="picker-custom-section">
           <details open>
-            <summary>✨ Mes QCM & communauté</summary>
-            <div class="picker-custom-loading" id="duel-picker-custom-list">// Chargement...</div>
+            <summary>${t("home.myQcmsAndCommunity")}</summary>
+            <div class="picker-custom-loading" id="duel-picker-custom-list">${t("common.loadingSlash")}</div>
           </details>
         </div>
       </div>
@@ -1033,7 +1062,7 @@ export function initRoomsPanel() {
     const password = document.getElementById('room-password-input').value.trim();
 
     if (!_roomIsPublic && !password) {
-      toast("⚠️ Mot de passe requis pour une salle privée");
+      toast(t("home.toastPasswordRequired"));
       return;
     }
 
@@ -1042,8 +1071,8 @@ export function initRoomsPanel() {
       document.getElementById('create-room-modal').style.display = 'none';
     } catch (e) {
       console.error("Room creation failed:", e);
-      const msg = e?.code ? `${e.code}` : (e?.message || 'erreur inconnue');
-      toast(`❌ Création impossible (${msg})`);
+      const msg = e?.code ? `${e.code}` : (e?.message || t("home.unknownError"));
+      toast(t("home.toastCreateRoomFailed", { msg }));
     }
   };
 
@@ -1065,8 +1094,8 @@ export function initRoomsPanel() {
       }
     } catch (e) {
       console.error("Room join failed:", e);
-      const msg = e?.code ? `${e.code}` : (e?.message || 'erreur inconnue');
-      toast(`❌ Rejoindre impossible (${msg})`);
+      const msg = e?.code ? `${e.code}` : (e?.message || t("home.unknownError"));
+      toast(t("home.toastJoinRoomFailed", { msg }));
     }
   };
 
@@ -1080,6 +1109,7 @@ export function teardownRoomsPanel() {
 }
 
 function renderRoomsPanel(rooms) {
+  lastRoomsList = rooms;
   const el = document.getElementById('rooms-list');
   if (!el) return;
   const now = Date.now();
@@ -1088,7 +1118,7 @@ function renderRoomsPanel(rooms) {
   const visibleRooms = rooms.filter(r => r.status !== 'finished');
 
   if (!visibleRooms.length) {
-    el.innerHTML = '<div class="rooms-empty">// Aucune salle publique en ce moment</div>';
+    el.innerHTML = `<div class="rooms-empty">${t("home.noPublicRooms")}</div>`;
     return;
   }
 
@@ -1100,15 +1130,17 @@ function renderRoomsPanel(rooms) {
       if (!ts?.toMillis) return true;
       return (now - ts.toMillis()) < OFFLINE_THRESHOLD;
     }).length;
+    const connectedWord = connectedCount > 1 ? t("home.connectedPlural") : t("home.connectedSingular");
+    const statusWord = r.status === 'playing' ? t("home.statusPlaying") : t("home.statusWaiting");
 
     return `
     <div class="room-chip">
       <div>
         <div class="room-chip-name">${r.name}</div>
-        <div class="room-chip-meta">${connectedCount} connecté${connectedCount > 1 ? 's' : ''}${players.length > connectedCount ? ` / ${players.length} total` : ''} · ${r.subjectName || 'Thème à définir'} · ⏱ ${r.questionTimeSec || 60}s/q · ${r.status === 'playing' ? 'en cours' : 'en attente'}</div>
+        <div class="room-chip-meta">${connectedCount} ${connectedWord}${players.length > connectedCount ? t("home.totalSuffix", { count: players.length }) : ''} · ${r.subjectName || t("home.themeToDefine")} · ⏱ ${r.questionTimeSec || 60}s/q · ${statusWord}</div>
       </div>
       <span class="room-chip-code">${r.id}</span>
-      <button class="btn-join-room" onclick="window.__quickJoinRoom('${r.id}')">Rejoindre</button>
+      <button class="btn-join-room" onclick="window.__quickJoinRoom('${r.id}')">${t("home.joinBtnShort")}</button>
     </div>
   `;
   }).join('') + `</div>`;
