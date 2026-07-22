@@ -232,7 +232,13 @@ Then open `http://localhost:5500`. Because ES modules require `http(s)://`, open
 
 ## License
 
-Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). You're free to use, modify, and redistribute this project, including running your own modified version — but any modified version, including one only run as a hosted web service, must have its source made available under the same license, and the original copyright notice must be kept.
+Licensed under a [custom noncommercial license with an internal-use exception](LICENSE). In short:
+
+- **Free to use and modify**, including keeping your own changes private — as long as it's for internal use within your own organization (e.g. a school running its own version for its own students).
+- **No money can be made from it**: nobody may sell this project, monetize it, or charge for access to a modified version, without a separate agreement.
+- **Distributing a modified version outside your organization** (giving it to another organization, hosting it for an external audience, publishing it, etc.) requires you to publish your source under the same license, no matter how small the changes.
+- The original credit ("Based on QCM Studio, created by Antonin Rossin") must always be kept.
+- For anything outside these terms (commercial use, paid custom work...): contact **[antoninrossinpro@gmail.com](mailto:antoninrossinpro@gmail.com)**.
 
 ---
 
@@ -468,4 +474,10 @@ Puis ouvre `http://localhost:5500`. Comme les modules ES nécessitent `http(s):/
 
 ## Licence
 
-Sous licence [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Tu es libre d'utiliser, modifier et redistribuer ce projet, y compris en faisant tourner ta propre version modifiée — mais toute version modifiée, y compris une simplement hébergée comme service web, doit rendre son code source disponible sous la même licence, et la mention de copyright d'origine doit être conservée.
+Sous [licence maison, non commerciale, avec exception d'usage interne](LICENSE). En résumé :
+
+- **Gratuit et libre à modifier**, y compris pour garder tes propres modifications privées — tant que c'est pour un usage interne à ta seule organisation (ex : ton établissement fait tourner sa propre version pour ses élèves).
+- **Pas d'argent** : personne ne peut vendre ce projet ni le monétiser, ni facturer l'accès à une version modifiée, sans un accord séparé.
+- **Diffuser une version modifiée à l'extérieur** de ton organisation (la donner à un autre établissement, l'héberger pour un public externe, la publier, etc.) t'oblige à publier ton code source sous la même licence, quelle que soit l'ampleur des changements.
+- La mention d'origine ("Basé sur QCM Studio, créé par Antonin Rossin") doit toujours être conservée.
+- Pour tout ce qui sort de ce cadre (usage commercial, adaptation payante sur mesure...) : contact à **[antoninrossinpro@gmail.com](mailto:antoninrossinpro@gmail.com)**.
