@@ -148,6 +148,11 @@ There's a single admin account, identified by username. Because the app spans th
 2. `isAdmin()`'s email check in `firestore.rules` — used to gate Firestore writes.
 3. `ADMIN_USERNAME` under `[vars]` in `wrangler.toml` — used by the Worker to gate the built-in AI routes.
 
+**Create the account first, then wire up the config.** Usernames aren't reserved — anyone who opens the deployed site can sign up with any username via the "Create account" tab. If you set `adminUsername` to a name nobody has registered yet, whoever signs up with it first becomes admin, not necessarily you. So:
+
+1. Open the app (locally or once deployed) and sign up for an account using the exact username you want as admin.
+2. Only then set that same username in the three places above, and (re)deploy `firestore.rules` and the Worker so the checks actually match.
+
 The admin account has full access to AI features by default and can manage the allowlist for other accounts, moderate shared API keys, and edit any custom QCM.
 
 ## Adding and removing subjects
@@ -378,6 +383,11 @@ Il y a un seul compte admin, identifié par son pseudo. Comme l'app est réparti
 1. `adminUsername` dans `js/config/site.config.js` — utilisé côté client pour afficher l'UI réservée à l'admin.
 2. Le contrôle d'email dans `isAdmin()` de `firestore.rules` — utilisé pour restreindre les écritures Firestore.
 3. `ADMIN_USERNAME` dans `[vars]` de `wrangler.toml` — utilisé par le Worker pour restreindre les routes IA intégrées.
+
+**Crée d'abord le compte, configure ensuite.** Les pseudos ne sont pas réservés : n'importe qui peut s'inscrire avec n'importe quel pseudo via l'onglet "Créer un compte" une fois le site déployé. Si tu mets `adminUsername` sur un pseudo que personne n'a encore pris, la première personne à s'inscrire avec ce pseudo devient admin — pas forcément toi. Donc :
+
+1. Ouvre l'app (en local ou une fois déployée) et inscris-toi avec exactement le pseudo que tu veux comme admin.
+2. Seulement ensuite, renseigne ce même pseudo aux trois endroits ci-dessus, et redéploie `firestore.rules` et le Worker pour que les contrôles correspondent bien.
 
 Le compte admin a accès par défaut à toutes les fonctionnalités IA, peut gérer l'allowlist des autres comptes, modérer les clés API partagées, et modifier n'importe quel QCM personnalisé.
 
