@@ -227,7 +227,7 @@ Then open `http://localhost:5500`. Because ES modules require `http(s)://`, open
 
 ## License
 
-This repository doesn't include a license file yet. Add one (MIT is a common choice for this kind of project) before treating it as open source in the legal sense — until then, all rights are reserved by default.
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). You're free to use, modify, and redistribute this project, including running your own modified version — but any modified version, including one only run as a hosted web service, must have its source made available under the same license, and the original copyright notice must be kept.
 
 ---
 
@@ -458,4 +458,4 @@ Puis ouvre `http://localhost:5500`. Comme les modules ES nécessitent `http(s):/
 
 ## Licence
 
-Ce dépôt ne contient pas encore de fichier de licence. Ajoutes-en un (MIT est un choix courant pour ce type de projet) avant de le considérer comme open source au sens légal — en attendant, tous droits sont réservés par défaut.
+Sous licence [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Tu es libre d'utiliser, modifier et redistribuer ce projet, y compris en faisant tourner ta propre version modifiée — mais toute version modifiée, y compris une simplement hébergée comme service web, doit rendre son code source disponible sous la même licence, et la mention de copyright d'origine doit être conservée.
